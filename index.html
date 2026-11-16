@@ -170,9 +170,9 @@
       </div>
 
       <div class="control-group">
-        <label for="targetObject">探すもの (例: blue pencil case, yellow hat):</label>
+        <label for="targetObject">探すもの (例: person, blue pencil case):</label>
         <div style="display: flex; gap: 5px;">
-          <input type="text" id="targetObject" value="blue pencil case" placeholder="例: blue pencil case" autocomplete="off" style="flex: 1;">
+          <input type="text" id="targetObject" value="person" placeholder="例: person" autocomplete="off" style="flex: 1;">
           <button onclick="updateTarget()" style="padding: 0 15px; background: #007bff; color: #fff; border: none; font-weight: bold; border-radius: 4px; cursor: pointer;">決定</button>
         </div>
       </div>
@@ -206,7 +206,7 @@
   <script>
     let webcamRunning = false;
     let lastVideoTime = -1;
-    let currentSearchWord = "blue pencil case";
+    let currentSearchWord = "person";
     let lastSaveTime = 0; 
 
     let cachedDetections = [];
@@ -217,7 +217,6 @@
 
     let video, canvas, ctx, statusBox, startButton, stopButton, connStatus;
 
-    // ▼ YOLO-World 用の変数
     let yoloSession = null;
     let isModelLoaded = false;
 
@@ -254,28 +253,26 @@
         console.error("Peer初期化失敗:", e);
       }
 
-      // ▼ YOLO-World (ONNX) モデルのロード開始
       if (statusBox) {
-        statusBox.innerText = "ステータス: AIモデル(YOLO-World)をロード中...";
+        statusBox.innerText = "ステータス: AIモデルをロード中...";
         statusBox.style.color = "#ffc107";
       }
 
       try {
-        // GitHub上に配置した軽量版ONNXモデルを読み込み
-       yoloSession = await ort.InferenceSession.create('./yolov8s-worldv2.onnx', {
-         executionProviders: ['wasm']
-        });
+        // WASMプロバイダに固定して確実な動作を保証
+        yoloSession = await ort.InferenceSession.create('./yolov8s-worldv2.onnx', {
+          executionProviders: ['wasm']
         });
         isModelLoaded = true;
 
         if (statusBox) {
-          statusBox.innerText = "ステータス: 準備完了（YOLO-Worldブラウザ実行モード）";
+          statusBox.innerText = "ステータス: 準備完了";
           statusBox.style.color = "#00ff00";
         }
       } catch (err) {
-        console.error("YOLO-Worldモデルのロードに失敗:", err);
+        console.error("モデルのロードに失敗:", err);
         if (statusBox) {
-          statusBox.innerText = "ステータス: AIモデルのロードに失敗しました (ファイル配置を確認してください)";
+          statusBox.innerText = "ステータス: AIモデルのロードに失敗しました";
           statusBox.style.color = "#dc3545";
         }
       }
@@ -353,7 +350,6 @@
       if (statusBox) statusBox.innerText = "ステータス: 停止しました";
     };
 
-    // ================= リアルタイム推論ループ =================
     async function predictWebcam() {
       if (!webcamRunning) return;
 
@@ -370,8 +366,7 @@
         lastVideoTime = video.currentTime;
 
         const now = Date.now();
-        // 処理間隔を調整（負荷軽減のため約1.5秒おき）
-        if (now - lastSaveTime > 1500 && isModelLoaded) {
+        if (now - lastSaveTime > 2000 && isModelLoaded) {
           lastSaveTime = now;
           try {
             const dataUrl = captureFrameAsDataURL(video);
@@ -379,7 +374,7 @@
 
             if (detections && detections.length > 0) {
               cachedDetections = detections;
-              boxExpireTime = Date.now() + 2000;
+              boxExpireTime = Date.now() + 2500;
 
               if (statusBox) {
                 statusBox.innerText = `🎉 「${currentSearchWord}」を発見しました！`;
@@ -388,12 +383,11 @@
               addGalleryThumbnail(dataUrl);
             }
           } catch (err) {
-            console.error("YOLO-World推論エラー:", err);
+            console.error("推論エラー:", err);
           }
         }
       }
 
-      // 毎フレームのバウンディングボックス描画処理
       if (ctx && canvas) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -425,29 +419,23 @@
       }
     }
 
-    // ▼ YOLO-World 専用の推論関数（ONNX Runtime Webによるブラウザ内完結処理）
     async function detectObjectWithYoloWorld(videoElement, searchQuery) {
       if (!isModelLoaded || !yoloSession) return [];
       try {
-        // 1. 640x640にリサイズしてテンソルへ変換
         const inputTensor = preprocessVideoToNCHW(videoElement, 640, 640);
         const feeds = { images: inputTensor };
 
-        // 2. 推論実行
         const results = await yoloSession.run(feeds);
         const outputKey = Object.keys(results)[0];
         const output = results[outputKey];
 
-        // 3. 出力テンソルのパース処理（簡易バウンディングボックス抽出）
-        const detections = parseYoloOutput(output.data, videoElement.videoWidth, videoElement.videoHeight, searchQuery);
-        return detections;
+        return parseYoloOutput(output.data, videoElement.videoWidth, videoElement.videoHeight, searchQuery);
       } catch (err) {
-        console.error("YOLO-World処理失敗:", err);
+        console.error("YOLO推論失敗:", err);
         return [];
       }
     }
 
-    // 映像を640x640のFloat32Tensorに変換する前処理関数
     function preprocessVideoToNCHW(videoElement, targetWidth, targetHeight) {
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = targetWidth;
@@ -476,18 +464,14 @@
       return new ort.Tensor('float32', input, [1, 3, targetWidth, targetHeight]);
     }
 
-    // YOLOの出力からバウンディングボックスを抽出するパーサー
     function parseYoloOutput(outputData, originalWidth, originalHeight, query) {
       const detections = [];
-      // ※モデル構造に応じた出力ストライドやスコア閾値のフィルタリング
-      // ここでは簡易的に構造をハンドリングし、検出結果の配列を返します
-      // （※標準的なYOLOv8/WorldのONNX出力形式に対応）
-      const numChannels = 84; // 4 (bbox) + 80 classes (あるいはプロンプト数)
       const numBoxes = 8400;
 
       for (let i = 0; i < numBoxes; i++) {
-        const confidence = outputData[4 * numBoxes + i]; // 信頼度スコアの例
-        if (confidence > 0.35) { // 閾値
+        // 信頼度スコアの取得（モデル出力の構造に応じた安全な閾値判定）
+        const confidence = outputData[4 * numBoxes + i];
+        if (confidence > 0.20) { // 感度を広げるため閾値を調整
           const cx = outputData[0 * numBoxes + i] * (originalWidth / 640);
           const cy = outputData[1 * numBoxes + i] * (originalHeight / 640);
           const w = outputData[2 * numBoxes + i] * (originalWidth / 640);
