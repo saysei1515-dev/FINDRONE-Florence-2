@@ -1,73 +1,380 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Realtime Open-Vocabulary Detector</title>
-    <style>
-        body {
-            background: #121212;
-            color: #fff;
-            margin: 0;
-            overflow: hidden;
-            font-family: sans-serif;
-        }
-        #ui-container {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            right: 10px;
-            z-index: 20;
-            display: flex;
-            gap: 8px;
-            background: rgba(18, 18, 18, 0.8);
-            padding: 10px;
-            border-radius: 8px;
-        }
-        input[type="text"] {
-            flex: 1;
-            padding: 10px;
-            border-radius: 4px;
-            border: 1px solid #444;
-            background: #222;
-            color: #fff;
-            font-size: 16px;
-        }
-        button {
-            padding: 10px 16px;
-            background: #3b82f6;
-            color: #fff;
-            border: none;
-            border-radius: 4px;
-            font-weight: bold;
-            cursor: pointer;
-        }
-        video, canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            object-fit: cover;
-        }
-        canvas {
-            z-index: 10;
-            pointer-events: none;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FINDRONE - YOLO-World 探索カメラ</title>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <!-- ONNX Runtime Web の読み込み -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #121212;
+      color: #e0e0e0;
+      margin: 0;
+      padding: 10px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      box-sizing: border-box;
+    }
+    .app-container {
+      width: 100%;
+      max-width: 480px;
+      background: #1e1e1e;
+      padding: 15px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+      box-sizing: border-box;
+    }
+    h1 {
+      font-size: 1.25rem;
+      text-align: center;
+      margin-top: 0;
+      margin-bottom: 15px;
+      color: #ffffff;
+    }
+    .tab-menu {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 15px;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 10px;
+      background: #2c2c2c;
+      color: #aaa;
+      border: none;
+      border-radius: 6px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .tab-btn.active {
+      background: #007bff;
+      color: #fff;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    .control-group {
+      margin-bottom: 12px;
+      background: #252525;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #333;
+    }
+    .control-group label {
+      display: block;
+      font-size: 12px;
+      margin-bottom: 5px;
+      color: #ccc;
+      font-weight: bold;
+    }
+    input[type="text"], select {
+      width: 100%;
+      padding: 8px 10px;
+      background: #181818;
+      border: 1px solid #444;
+      border-radius: 4px;
+      color: #fff;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    .camera-container {
+      position: relative;
+      width: 100%;
+      background: #000;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+    video, canvas {
+      width: 100%;
+      display: block;
+    }
+    .primary-btn {
+      width: 100%;
+      padding: 12px;
+      background: #28a745;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-weight: bold;
+      font-size: 15px;
+      cursor: pointer;
+    }
+    .primary-btn:disabled {
+      background: #555;
+      cursor: not-allowed;
+    }
+    .danger-btn {
+      width: 100%;
+      padding: 12px;
+      background: #dc3545;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-weight: bold;
+      font-size: 15px;
+      cursor: pointer;
+    }
+    .status-box {
+      margin-top: 10px;
+      padding: 10px;
+      background: #252525;
+      border-radius: 6px;
+      font-size: 13px;
+      text-align: center;
+      color: #ffc107;
+      border: 1px solid #333;
+    }
+    .gallery {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      padding: 5px 0;
+      min-height: 90px;
+      background: #181818;
+      border-radius: 6px;
+      border: 1px dashed #333;
+    }
+  </style>
 </head>
 <body>
-
-    <div id="ui-container">
-        <input type="text" id="targetInput" value="blue pencil case" placeholder="探したい言葉を入力 (例: cat, red cup)">
-        <button id="updateBtn">設定</button>
+  <div class="app-container">
+    <h1>🔍 YOLO-World 探索カメラ</h1>
+    <div class="tab-menu">
+      <button class="tab-btn active" onclick="switchTab('search')">🔍 探索モード</button>
     </div>
+    
+    <div id="searchTab" class="tab-content active">
+      <div class="control-group" style="border: 2px solid #007bff; background: #f0f7ff;">
+        <label for="pcIdInput" style="color: #007bff;">🔗 PC接続用ID:</label>
+        <div style="display: flex; gap: 5px; margin-bottom: 8px;">
+          <input type="text" id="pcIdInput" placeholder="PC側のIDを入力 or QRスキャン" style="flex: 1;">
+          <button onclick="connectToPC()" style="padding: 0 15px; background: #007bff; color: #fff; border: none; font-weight: bold; border-radius: 4px; cursor: pointer;">接続</button>
+        </div>
+        <div style="display: flex; gap: 5px; margin-bottom: 5px;">
+          <button onclick="startQrScanner()" style="flex: 1; padding: 8px; background: #28a745; color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 13px;">📷 QRスキャン起動</button>
+          <button onclick="stopQrScanner()" style="flex: 1; padding: 8px; background: #6c757d; color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 13px;">⏹️ カメラ停止</button>
+        </div>
+        <div id="qr-reader" style="width: 100%; max-width: 260px; margin: 10px auto; display: none;"></div>
+        <div id="connectionStatus" style="font-size: 12px; color: #666; margin-top: 5px;">ステータス: 未接続</div>
+      </div>
 
-    <video id="webcam" autoplay playsinline muted></video>
-    <canvas id="outputCanvas"></canvas>
+      <div class="control-group">
+        <label for="targetObject">探すもの (例: blue pencil case, yellow hat):</label>
+        <div style="display: flex; gap: 5px;">
+          <input type="text" id="targetObject" value="blue pencil case" placeholder="例: blue pencil case" autocomplete="off" style="flex: 1;">
+          <button onclick="updateTarget()" style="padding: 0 15px; background: #007bff; color: #fff; border: none; font-weight: bold; border-radius: 4px; cursor: pointer;">決定</button>
+        </div>
+      </div>
 
-    <!-- ONNX Runtime Web のCDN読み込み -->
-    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
-    <script src="app.js"></script>
-</body>
-</html>
+      <div class="camera-container">
+        <video id="video" autoplay muted playsinline style="width: 100%; display: block;"></video>
+        <canvas id="outputCanvas" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none;"></canvas>
+      </div>
+
+      <div class="button-group" style="margin-top: 10px;">
+        <button id="startButton" class="primary-btn" onclick="startCamera()" disabled>PCと接続してください</button>
+        <button id="stopButton" class="danger-btn" onclick="stopCamera()" style="display:none;">停止</button>
+      </div>
+
+      <div id="status" class="status-box">ステータス: 初期化中...</div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
+        <h3 style="margin: 0; font-size: 14px;">📁 発見したアイテムの履歴</h3>
+        <button onclick="clearGallery()" style="padding: 5px 10px; background: #dc3545; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">履歴クリア</button>
+      </div>
+      <div id="imageGallery" class="gallery"></div>
+    </div>
+  </div>
+
+  <!-- 画像プレビューモーダル -->
+  <div id="imagePreviewModal" style="display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); align-items: center; justify-content: center; flex-direction: column;" onclick="closePreview()">
+    <img id="previewImage" style="max-width: 90%; max-height: 80%; border-radius: 8px; border: 3px solid #00ff00; object-fit: contain;">
+    <div style="color: #fff; margin-top: 15px; font-size: 14px; background: rgba(0,0,0,0.5); padding: 5px 15px; border-radius: 4px;">画面をタップして閉じる</div>
+  </div>
+
+  <script>
+    let webcamRunning = false;
+    let lastVideoTime = -1;
+    let currentSearchWord = "blue pencil case";
+    let lastSaveTime = 0; 
+
+    let cachedDetections = [];
+    let boxExpireTime = 0;
+
+    let peer = null;
+    let conn = null;
+
+    let video, canvas, ctx, statusBox, startButton, stopButton, connStatus;
+
+    // ▼ YOLO-World 用の変数
+    let yoloSession = null;
+    let isModelLoaded = false;
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      video = document.getElementById("video");
+      canvas = document.getElementById("outputCanvas");
+      if (canvas) ctx = canvas.getContext("2d");
+      statusBox = document.getElementById("status");
+      startButton = document.getElementById("startButton");
+      stopButton = document.getElementById("stopButton");
+      connStatus = document.getElementById("connectionStatus");
+
+      try {
+        peer = new Peer();
+        peer.on('open', (id) => { console.log("PeerJS Connected, ID:", id); });
+        peer.on('error', (err) => { console.error("PeerJSエラー:", err); });
+        peer.on('call', (call) => {
+          call.answer();
+          call.on('stream', (remoteStream) => {
+            if (video) {
+              video.srcObject = remoteStream;
+              webcamRunning = true;
+              if (startButton) startButton.style.display = "none";
+              if (stopButton) stopButton.style.display = "block";
+              if (statusBox) {
+                statusBox.innerText = `ステータス: 「${currentSearchWord}」を探索中...`;
+                statusBox.style.color = "#00ff00";
+              }
+              video.onloadeddata = () => { predictWebcam(); };
+            }
+          });
+        });
+      } catch (e) {
+        console.error("Peer初期化失敗:", e);
+      }
+
+      // ▼ YOLO-World (ONNX) モデルのロード開始
+      if (statusBox) {
+        statusBox.innerText = "ステータス: AIモデル(YOLO-World)をロード中...";
+        statusBox.style.color = "#ffc107";
+      }
+
+      try {
+        // GitHub上に配置した軽量版ONNXモデルを読み込み
+        yoloSession = await ort.InferenceSession.create('./yolov8s-worldv2.onnx', {
+          executionProviders: ['webgpu', 'wasm']
+        });
+        isModelLoaded = true;
+
+        if (statusBox) {
+          statusBox.innerText = "ステータス: 準備完了（YOLO-Worldブラウザ実行モード）";
+          statusBox.style.color = "#00ff00";
+        }
+      } catch (err) {
+        console.error("YOLO-Worldモデルのロードに失敗:", err);
+        if (statusBox) {
+          statusBox.innerText = "ステータス: AIモデルのロードに失敗しました (ファイル配置を確認してください)";
+          statusBox.style.color = "#dc3545";
+        }
+      }
+    });
+
+    window.switchTab = function(tabName) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+      document.querySelector('.tab-menu button:nth-child(1)').classList.add('active');
+      document.getElementById('searchTab').classList.add('active');
+    };
+
+    window.connectToPC = function() {
+      const pcIdInput = document.getElementById("pcIdInput");
+      if (!pcIdInput) return;
+      const pcId = pcIdInput.value.trim();
+      if (!pcId) { alert("PCのIDを入力してください！"); return; }
+      if (connStatus) {
+        connStatus.innerText = "ステータス: 接続中...";
+        connStatus.style.color = "#ffc107";
+      }
+      conn = peer.connect(pcId);
+      conn.on('open', () => {
+        if (connStatus) {
+          connStatus.innerText = "ステータス: 接続完了 ✅";
+          connStatus.style.color = "#28a745";
+        }
+        if (startButton) {
+          startButton.disabled = false;
+          startButton.innerText = "遠隔カメラ起動 & 探索スタート";
+        }
+        if (statusBox && isModelLoaded) {
+          statusBox.innerText = "ステータス: 準備完了";
+          statusBox.style.color = "#00ff00";
+        }
+      });
+    };
+
+    window.updateTarget = function() {
+      const targetObj = document.getElementById("targetObject");
+      if (!targetObj) return;
+      const inputVal = targetObj.value.trim();
+      if (!inputVal) { alert("探すものを入力してください！"); return; }
+      currentSearchWord = inputVal;
+      if (statusBox) {
+        statusBox.innerText = `🎯 「${currentSearchWord}」を探します`;
+        statusBox.style.color = "#00ff00";
+      }
+    };
+
+    window.startCamera = function() {
+      const targetObj = document.getElementById("targetObject");
+      if (!targetObj) return;
+      const inputVal = targetObj.value.trim();
+      if (!inputVal) {
+        alert("探すものを入力してください！");
+        targetObj.focus();
+        return;
+      }
+      if (!conn || !conn.open) { alert("先にPCと接続してください！"); return; }
+      currentSearchWord = inputVal;
+      conn.send({ action: 'start', keyword: currentSearchWord, smartphoneId: peer.id });
+      if (statusBox) statusBox.innerText = "ステータス: 遠隔カメラ起動要求を送信中...";
+    };
+
+    window.stopCamera = function() {
+      if (conn && conn.open) conn.send({ action: 'stop' });
+      webcamRunning = false;
+      cachedDetections = [];
+      if (video && video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+      if (video) video.srcObject = null;
+      if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (stopButton) stopButton.style.display = "none";
+      if (startButton) startButton.style.display = "block";
+      if (statusBox) statusBox.innerText = "ステータス: 停止しました";
+    };
+
+    // ================= リアルタイム推論ループ =================
+    async function predictWebcam() {
+      if (!webcamRunning) return;
+
+      if (video && video.videoWidth > 0 && video.videoHeight > 0) {
+        const displayWidth = video.clientWidth;
+        const displayHeight = video.clientHeight;
+        if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+          canvas.width = displayWidth;
+          canvas.height = displayHeight;
+        }
+      }
+
+      if (video && video.currentTime !== lastVideoTime) {
+        lastVideoTime = video.currentTime;
+
+        const now = Date.now();
+        // 処理間隔を調整（負荷軽減のため約1.5秒おき）
+        if (now - lastSaveTime > 1500 && isModelLoaded) {
+          lastSaveTime = now;
+          try {
+            const dataUrl = captureFrameAsDataURL(video);
+            const detections = await detectObjectWithYoloWorld(video, currentSearchWord);
+
+            if (detections && detections.length > 0) {
+              cachedDetections = detections;
