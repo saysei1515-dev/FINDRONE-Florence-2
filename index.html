@@ -262,8 +262,9 @@
 
       try {
         // GitHub上に配置した軽量版ONNXモデルを読み込み
-        yoloSession = await ort.InferenceSession.create('./yolov8s-worldv2.onnx', {
-          executionProviders: ['webgpu', 'wasm']
+       yoloSession = await ort.InferenceSession.create('./yolov8s-worldv2.onnx', {
+         executionProviders: ['wasm']
+        });
         });
         isModelLoaded = true;
 
