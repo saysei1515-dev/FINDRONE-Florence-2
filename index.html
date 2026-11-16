@@ -3,11 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FINDRONE - YOLO-World 探索カメラ</title>
+  <title>FINDRONE - Florence-2 探索カメラ</title>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
-  <!-- ONNX Runtime Web の読み込み -->
-  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+  
+  <!-- Transformers.js (ES Modules) の読み込み -->
+  <script type="module">
+    import { AutoProcessor, AutoTokenizer, Florence2ForConditionalGeneration, RawImage } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0';
+    window.Florence2Helper = { AutoProcessor, AutoTokenizer, Florence2ForConditionalGeneration, RawImage };
+  </script>
 
   <style>
     body {
@@ -77,7 +81,7 @@
       color: #ccc;
       font-weight: bold;
     }
-    input[type="text"], select {
+    input[type="text"] {
       width: 100%;
       padding: 8px 10px;
       background: #181818;
@@ -149,7 +153,7 @@
 </head>
 <body>
   <div class="app-container">
-    <h1>🔍 YOLO-World 探索カメラ</h1>
+    <h1>🔍 Florence-2 探索カメラ</h1>
     <div class="tab-menu">
       <button class="tab-btn active" onclick="switchTab('search')">🔍 探索モード</button>
     </div>
@@ -203,7 +207,7 @@
     <div style="color: #fff; margin-top: 15px; font-size: 14px; background: rgba(0,0,0,0.5); padding: 5px 15px; border-radius: 4px;">画面をタップして閉じる</div>
   </div>
 
-  <script>
+  <script type="module">
     let webcamRunning = false;
     let lastVideoTime = -1;
     let currentSearchWord = "person";
@@ -217,7 +221,9 @@
 
     let video, canvas, ctx, statusBox, startButton, stopButton, connStatus;
 
-    let yoloSession = null;
+    let florenceModel = null;
+    let florenceProcessor = null;
+    let florenceTokenizer = null;
     let isModelLoaded = false;
 
     window.addEventListener('DOMContentLoaded', async () => {
@@ -254,15 +260,27 @@
       }
 
       if (statusBox) {
-        statusBox.innerText = "ステータス: AIモデルをロード中...";
+        statusBox.innerText = "ステータス: AIモデル(Florence-2)をロード中...";
         statusBox.style.color = "#ffc107";
       }
 
       try {
-        // WASMプロバイダに固定して確実な動作を保証
-        yoloSession = await ort.InferenceSession.create('./yolov8s-worldv2.onnx', {
-          executionProviders: ['wasm']
+        const { AutoProcessor, AutoTokenizer, Florence2ForConditionalGeneration } = window.Florence2Helper;
+        const model_id = 'onnx-community/Florence-2-base-ft';
+        
+        // WASMモードに固定して安定動作を優先
+        florenceModel = await Florence2ForConditionalGeneration.from_pretrained(model_id, {
+          dtype: {
+            embed_tokens: 'fp16',
+            vision_encoder: 'fp16',
+            encoder_model: 'q4',
+            decoder_model_merged: 'q4',
+          },
+          device: 'wasm',
         });
+
+        florenceProcessor = await AutoProcessor.from_pretrained(model_id);
+        florenceTokenizer = await AutoTokenizer.from_pretrained(model_id);
         isModelLoaded = true;
 
         if (statusBox) {
@@ -270,7 +288,7 @@
           statusBox.style.color = "#00ff00";
         }
       } catch (err) {
-        console.error("モデルのロードに失敗:", err);
+        console.error("Florence-2モデルのロードに失敗:", err);
         if (statusBox) {
           statusBox.innerText = "ステータス: AIモデルのロードに失敗しました";
           statusBox.style.color = "#dc3545";
@@ -366,11 +384,26 @@
         lastVideoTime = video.currentTime;
 
         const now = Date.now();
-        if (now - lastSaveTime > 2000 && isModelLoaded) {
+        // 負荷を考慮し、3秒ごとに推論を実行
+        if (now - lastSaveTime > 3000 && isModelLoaded) {
           lastSaveTime = now;
           try {
-            const dataUrl = captureFrameAsDataURL(video);
-            const detections = await detectObjectWithYoloWorld(video, currentSearchWord);
+            const tempCanvas = document.createElement("canvas");
+            const MAX_WIDTH = 320;
+            let targetWidth = video.videoWidth;
+            let targetHeight = video.videoHeight;
+            if (targetWidth > MAX_WIDTH) {
+              targetHeight = Math.round((targetHeight * MAX_WIDTH) / targetWidth);
+              targetWidth = MAX_WIDTH;
+            }
+            tempCanvas.width = targetWidth;
+            tempCanvas.height = targetHeight;
+
+            const tempCtx = tempCanvas.getContext("2d");
+            tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+
+            const dataUrl = tempCanvas.toDataURL("image/jpeg", 0.8);
+            const detections = await detectObjectWithFlorence(dataUrl, currentSearchWord);
 
             if (detections && detections.length > 0) {
               cachedDetections = detections;
@@ -383,7 +416,7 @@
               addGalleryThumbnail(dataUrl);
             }
           } catch (err) {
-            console.error("推論エラー:", err);
+            console.error("Florence-2推論エラー:", err);
           }
         }
       }
@@ -419,85 +452,41 @@
       }
     }
 
-    async function detectObjectWithYoloWorld(videoElement, searchQuery) {
-      if (!isModelLoaded || !yoloSession) return [];
+    async function detectObjectWithFlorence(dataUrl, searchQuery) {
+      if (!isModelLoaded) return [];
       try {
-        const inputTensor = preprocessVideoToNCHW(videoElement, 640, 640);
-        const feeds = { images: inputTensor };
+        const { RawImage } = window.Florence2Helper;
+        const image = await RawImage.fromURL(dataUrl);
 
-        const results = await yoloSession.run(feeds);
-        const outputKey = Object.keys(results)[0];
-        const output = results[outputKey];
+        const task = '<CAPTION_TO_PHRASE_GROUNDING>';
+        const prompt = task + searchQuery;
 
-        return parseYoloOutput(output.data, videoElement.videoWidth, videoElement.videoHeight, searchQuery);
-      } catch (err) {
-        console.error("YOLO推論失敗:", err);
-        return [];
-      }
-    }
+        const text_inputs = florenceTokenizer(prompt);
+        const vision_inputs = await florenceProcessor(image);
 
-    function preprocessVideoToNCHW(videoElement, targetWidth, targetHeight) {
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = targetWidth;
-      tempCanvas.height = targetHeight;
-      const tempCtx = tempCanvas.getContext('2d');
-      tempCtx.drawImage(videoElement, 0, 0, targetWidth, targetHeight);
+        const generated_ids = await florenceModel.generate({
+          ...text_inputs,
+          ...vision_inputs,
+          max_new_tokens: 100,
+        });
 
-      const imgData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
-      const pixels = imgData.data;
+        const generated_text = florenceTokenizer.batch_decode(generated_ids, { skip_special_tokens: false })[0];
+        const result = florenceProcessor.post_process_generation(generated_text, task, image.size);
 
-      const red = new Float32Array(targetWidth * targetHeight);
-      const green = new Float32Array(targetWidth * targetHeight);
-      const blue = new Float32Array(targetWidth * targetHeight);
+        const parsed = result[task] || { bboxes: [], labels: [] };
 
-      for (let i = 0; i < pixels.length / 4; i++) {
-        red[i] = pixels[i * 4] / 255.0;
-        green[i] = pixels[i * 4 + 1] / 255.0;
-        blue[i] = pixels[i * 4 + 2] / 255.0;
-      }
-
-      const input = new Float32Array(3 * targetWidth * targetHeight);
-      input.set(red, 0);
-      input.set(green, targetWidth * targetHeight);
-      input.set(blue, 2 * targetWidth * targetHeight);
-
-      return new ort.Tensor('float32', input, [1, 3, targetWidth, targetHeight]);
-    }
-
-    function parseYoloOutput(outputData, originalWidth, originalHeight, query) {
-      const detections = [];
-      const numBoxes = 8400;
-
-      for (let i = 0; i < numBoxes; i++) {
-        // 信頼度スコアの取得（モデル出力の構造に応じた安全な閾値判定）
-        const confidence = outputData[4 * numBoxes + i];
-        if (confidence > 0.20) { // 感度を広げるため閾値を調整
-          const cx = outputData[0 * numBoxes + i] * (originalWidth / 640);
-          const cy = outputData[1 * numBoxes + i] * (originalHeight / 640);
-          const w = outputData[2 * numBoxes + i] * (originalWidth / 640);
-          const h = outputData[3 * numBoxes + i] * (originalHeight / 640);
-
-          const x1 = cx - w / 2;
-          const y1 = cy - h / 2;
-          const x2 = cx + w / 2;
-          const y2 = cy + h / 2;
-
+        const detections = [];
+        for (let i = 0; i < parsed.bboxes.length; i++) {
           detections.push({
-            box_2d: [x1, y1, x2, y2],
-            label: query
+            box_2d: parsed.bboxes[i],
+            label: parsed.labels[i] || searchQuery
           });
         }
+        return detections;
+      } catch (err) {
+        console.error("Florence処理失敗:", err);
+        return [];
       }
-      return detections;
-    }
-
-    function captureFrameAsDataURL(videoElement) {
-      const tempCanvas = document.createElement("canvas");
-      tempCanvas.width = videoElement.videoWidth;
-      tempCanvas.height = videoElement.videoHeight;
-      const tempCtx = tempCanvas.getContext("2d");
-      tempCtx.drawImage(videoElement, 0, 0, tempCanvas.width, tempCanvas.height);
-      return tempCanvas.toDataURL("image/jpeg", 0.8);
     }
 
     function addGalleryThumbnail(dataUrl) {
