@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Realtime Open-Vocabulary Detector</title>
+    <style>
+        body {
+            background: #121212;
+            color: #fff;
+            margin: 0;
+            overflow: hidden;
+            font-family: sans-serif;
+        }
+        #ui-container {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            z-index: 20;
+            display: flex;
+            gap: 8px;
+            background: rgba(18, 18, 18, 0.8);
+            padding: 10px;
+            border-radius: 8px;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #444;
+            background: #222;
+            color: #fff;
+            font-size: 16px;
+        }
+        button {
+            padding: 10px 16px;
+            background: #3b82f6;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        video, canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+        }
+        canvas {
+            z-index: 10;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui-container">
+        <input type="text" id="targetInput" value="blue pencil case" placeholder="探したい言葉を入力 (例: cat, red cup)">
+        <button id="updateBtn">設定</button>
+    </div>
+
+    <video id="webcam" autoplay playsinline muted></video>
+    <canvas id="outputCanvas"></canvas>
+
+    <!-- ONNX Runtime Web のCDN読み込み -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
