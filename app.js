@@ -23,10 +23,9 @@ async function initCamera() {
     status.innerText = "ステータス: 準備完了 (翻訳AIを準備中...)";
     status.style.color = "#00ff00";
 
-    // ブラウザ単体で動くオープンソース翻訳モデルのロード（例として多言語対応の軽量モデル）
+    // ブラウザ単体で動くオープンソース翻訳モデルのロード
     if (window.transformersPipeline) {
       status.innerText = "ステータス: 翻訳AIをロード中...";
-      // 英語への翻訳に適した軽量モデル（Hugging Face Xenova/nllb-200 または t5系）
       translator = await window.transformersPipeline('translation', 'Xenova/opus-mt-ja-en');
       status.innerText = "ステータス: 準備完了 (日本語対応OK)";
       status.style.color = "#00ff00";
@@ -39,19 +38,19 @@ async function initCamera() {
 }
 initCamera();
 
-// 2. 検索ワードの更新 ＆ ブラウザ単体での自動翻訳
+// 2. 検索ワードの更新 ＆ 翻訳結果を入力欄に上書き
 window.updateTarget = async function() {
-  const inputVal = document.getElementById("targetObject").value.trim();
+  const inputElement = document.getElementById("targetObject");
+  const inputVal = inputElement.value.trim();
   if (!inputVal) { alert("探すものを入力してください！"); return; }
 
   let searchWord = inputVal.toLowerCase();
 
-  // 英語のみの場合はそのまま、日本語が含まれている場合はブラウザ単体AIで翻訳
+  // 日本語が含まれている場合はブラウザ単体AIで翻訳
   if (/[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uffef\u4e00-\u9faf]/.test(inputVal)) {
     if (translator) {
       status.innerText = "🔄 翻訳中...";
       try {
-        // AIモデルによる翻訳実行
         const output = await translator(inputVal);
         if (output && output[0] && output[0].translation_text) {
           searchWord = output[0].translation_text.trim().toLowerCase();
@@ -63,9 +62,12 @@ window.updateTarget = async function() {
   }
 
   currentSearchWord = searchWord;
-  status.innerText = `🎯 「${inputVal}」 ➔ 英語: [${currentSearchWord}] を探します`;
+  
+  // ★ 入力欄の文字を翻訳後の英語に上書きする
+  inputElement.value = currentSearchWord;
+
+  status.innerText = `🎯 「${inputVal}」 ➔ 英語: [${currentSearchWord}] に変換しました`;
   status.style.color = "#00ff00";
-  document.getElementById("targetObject").value = currentSearchWord;
 };
 
 // 3. 探索スタート（ループ開始）
@@ -77,7 +79,7 @@ window.startDetection = async function() {
     return;
   }
 
-  // スタート時にもし日本語のままなら一度翻訳を通す
+  // スタート時に入力欄が日本語なら自動で翻訳＆上書きを実行
   await window.updateTarget();
 
   isSearching = true;
