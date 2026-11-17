@@ -3,28 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FINDRONE - YOLOv8n + CLIP ハイブリッド探索</title>
-  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
-  <!-- ONNX Runtime Web (WASM) -->
-  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
-  
-  <!-- Transformers.js (CLIP用) -->
-  <script type="module">
-    import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0';
-    window.TransformersHelper = { pipeline };
-  </script>
-
+  <title>PCサーバー連携 言葉探索カメラ</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       background-color: #121212;
       color: #e0e0e0;
       margin: 0;
-      padding: 10px;
+      padding: 12px;
       display: flex;
       justify-content: center;
-      align-items: center;
       min-height: 100vh;
       box-sizing: border-box;
     }
@@ -32,42 +20,58 @@
       width: 100%;
       max-width: 480px;
       background: #1e1e1e;
-      padding: 15px;
+      padding: 16px;
       border-radius: 12px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
       box-sizing: border-box;
     }
     h1 {
       font-size: 1.15rem;
       text-align: center;
-      margin-top: 0;
-      margin-bottom: 15px;
+      margin: 0 0 14px 0;
       color: #ffffff;
     }
     .control-group {
       margin-bottom: 12px;
       background: #252525;
-      padding: 10px;
+      padding: 10px 12px;
       border-radius: 8px;
       border: 1px solid #333;
     }
     .control-group label {
       display: block;
       font-size: 12px;
-      margin-bottom: 5px;
-      color: #ccc;
+      margin-bottom: 6px;
+      color: #bbb;
       font-weight: bold;
     }
+    .row {
+      display: flex;
+      gap: 6px;
+    }
     input[type="text"] {
-      width: 100%;
-      padding: 8px 10px;
-      background: #181818;
+      flex: 1;
+      padding: 9px 10px;
+      background: #161616;
       border: 1px solid #444;
-      border-radius: 4px;
+      border-radius: 6px;
       color: #fff;
       font-size: 14px;
       box-sizing: border-box;
     }
+    button {
+      padding: 9px 14px;
+      border: none;
+      border-radius: 6px;
+      font-weight: bold;
+      font-size: 13px;
+      cursor: pointer;
+      color: #fff;
+      white-space: nowrap;
+    }
+    .btn-blue { background: #007bff; }
+    .btn-green { background: #28a745; width: 100%; padding: 12px; font-size: 15px; }
+    .btn-red { background: #dc3545; width: 100%; padding: 12px; font-size: 15px; }
     .camera-container {
       position: relative;
       width: 100%;
@@ -75,36 +79,19 @@
       border-radius: 8px;
       overflow: hidden;
       margin-bottom: 10px;
+      min-height: 280px;
     }
     video, canvas {
       width: 100%;
       display: block;
     }
-    .primary-btn {
+    #outputCanvas {
+      position: absolute;
+      left: 0;
+      top: 0;
       width: 100%;
-      padding: 12px;
-      background: #28a745;
-      color: #fff;
-      border: none;
-      border-radius: 6px;
-      font-weight: bold;
-      font-size: 15px;
-      cursor: pointer;
-    }
-    .primary-btn:disabled {
-      background: #555;
-      cursor: not-allowed;
-    }
-    .danger-btn {
-      width: 100%;
-      padding: 12px;
-      background: #dc3545;
-      color: #fff;
-      border: none;
-      border-radius: 6px;
-      font-weight: bold;
-      font-size: 15px;
-      cursor: pointer;
+      height: 100%;
+      pointer-events: none;
     }
     .status-box {
       margin-top: 10px;
@@ -116,443 +103,201 @@
       color: #ffc107;
       border: 1px solid #333;
     }
-    .gallery {
-      display: flex;
-      gap: 10px;
-      overflow-x: auto;
-      padding: 5px 0;
-      min-height: 90px;
-      background: #181818;
-      border-radius: 6px;
-      border: 1px dashed #333;
+    .hint {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
     }
   </style>
 </head>
 <body>
   <div class="app-container">
-    <h1>🎯 YOLOv8n + CLIP 探索カメラ</h1>
-    
-    <div class="control-group" style="border: 2px solid #007bff; background: #f0f7ff;">
-      <label for="pcIdInput" style="color: #007bff;">🔗 PC接続用ID:</label>
-      <div style="display: flex; gap: 5px; margin-bottom: 8px;">
-        <input type="text" id="pcIdInput" placeholder="PC側のIDを入力 or QRスキャン" style="flex: 1;">
-        <button onclick="connectToPC()" style="padding: 0 15px; background: #007bff; color: #fff; border: none; font-weight: bold; border-radius: 4px; cursor: pointer;">接続</button>
-      </div>
-      <div style="display: flex; gap: 5px; margin-bottom: 5px;">
-        <button onclick="startQrScanner()" style="flex: 1; padding: 8px; background: #28a745; color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 13px;">📷 QRスキャン起動</button>
-        <button onclick="stopQrScanner()" style="flex: 1; padding: 8px; background: #6c757d; color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 13px;">⏹️ カメラ停止</button>
-      </div>
-      <div id="qr-reader" style="width: 100%; max-width: 260px; margin: 10px auto; display: none;"></div>
-      <div id="connectionStatus" style="font-size: 12px; color: #666; margin-top: 5px;">ステータス: 未接続</div>
-    </div>
+    <h1>🚀 PCサーバー連携 探索カメラ</h1>
 
+    <!-- 1. PCのIPアドレス設定 -->
     <div class="control-group">
-      <label for="targetObject">探すもの (例: blue pencil case, smartphone):</label>
-      <div style="display: flex; gap: 5px;">
-        <input type="text" id="targetObject" value="blue pencil case" placeholder="例: blue pencil case" autocomplete="off" style="flex: 1;">
-        <button onclick="updateTarget()" style="padding: 0 15px; background: #007bff; color: #fff; border: none; font-weight: bold; border-radius: 4px; cursor: pointer;">決定</button>
+      <label for="serverIpInput">💻 パソコンのIPアドレス:</label>
+      <div class="row">
+        <input type="text" id="serverIpInput" placeholder="例: 192.168.1.15">
+        <button class="btn-blue" onclick="saveIp()">保存</button>
       </div>
+      <div class="hint">※PCのコマンドプロンプトで ipconfig と打って確認したIPv4アドレス</div>
     </div>
 
+    <!-- 2. 探す言葉の入力 -->
+    <div class="control-group">
+      <label for="targetObject">🔍 探したいもの（自由な言葉）:</label>
+      <div class="row">
+        <input type="text" id="targetObject" value="pen" placeholder="例: pen, phone, cup">
+      </div>
+      <div class="hint">※YOLO-Worldは英語の方が認識しやすいため「pen」「bottle」などの英語がおすすめです</div>
+    </div>
+
+    <!-- カメラ映像 & ボックス描画領域 -->
     <div class="camera-container">
-      <video id="video" autoplay muted playsinline style="width: 100%; display: block;"></video>
-      <canvas id="outputCanvas" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none;"></canvas>
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="outputCanvas"></canvas>
     </div>
 
-    <div class="button-group" style="margin-top: 10px;">
-      <button id="startButton" class="primary-btn" onclick="startCamera()" disabled>PCと接続してください</button>
-      <button id="stopButton" class="danger-btn" onclick="stopCamera()" style="display:none;">停止</button>
+    <!-- スタート・ストップボタン -->
+    <div>
+      <button id="startButton" class="btn-green" onclick="startCameraAndSearch()">探索スタート</button>
+      <button id="stopButton" class="btn-red" onclick="stopSearch()" style="display: none;">探索ストップ</button>
     </div>
 
-    <div id="status" class="status-box">ステータス: 初期化中...</div>
-
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
-      <h3 style="margin: 0; font-size: 14px;">📁 発見したアイテムの履歴</h3>
-      <button onclick="clearGallery()" style="padding: 5px 10px; background: #dc3545; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">履歴クリア</button>
-    </div>
-    <div id="imageGallery" class="gallery"></div>
+    <div id="status" class="status-box">ステータス: 待機中</div>
   </div>
 
-  <!-- 画像プレビューモーダル -->
-  <div id="imagePreviewModal" style="display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); align-items: center; justify-content: center; flex-direction: column;" onclick="closePreview()">
-    <img id="previewImage" style="max-width: 90%; max-height: 80%; border-radius: 8px; border: 3px solid #00ff00; object-fit: contain;">
-    <div style="color: #fff; margin-top: 15px; font-size: 14px; background: rgba(0,0,0,0.5); padding: 5px 15px; border-radius: 4px;">画面をタップして閉じる</div>
-  </div>
-
-  <script type="module">
-    let webcamRunning = false;
-    let lastVideoTime = -1;
-    let currentSearchWord = "blue pencil case";
-    let lastProcessTime = 0;
-
-    let cachedBoxes = [];
+  <script>
+    let isSearching = false;
+    let isRequestInFlight = false;
+    let searchTimer = null;
+    let cachedDetections = [];
     let boxExpireTime = 0;
 
-    let peer = null;
-    let conn = null;
-    let video, canvas, ctx, statusBox, startButton, stopButton, connStatus;
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("outputCanvas");
+    const ctx = canvas.getContext("2d");
+    const statusBox = document.getElementById("status");
 
-    let yoloSession = null;
-    let clipClassifier = null;
-    let isModelsLoaded = false;
-
-    window.addEventListener('DOMContentLoaded', async () => {
-      video = document.getElementById("video");
-      canvas = document.getElementById("outputCanvas");
-      if (canvas) ctx = canvas.getContext("2d");
-      statusBox = document.getElementById("status");
-      startButton = document.getElementById("startButton");
-      stopButton = document.getElementById("stopButton");
-      connStatus = document.getElementById("connectionStatus");
-
-      try {
-        peer = new Peer();
-        peer.on('open', (id) => { console.log("PeerJS Connected, ID:", id); });
-        peer.on('error', (err) => { console.error("PeerJSエラー:", err); });
-        peer.on('call', (call) => {
-          call.answer();
-          call.on('stream', (remoteStream) => {
-            if (video) {
-              video.srcObject = remoteStream;
-              webcamRunning = true;
-              if (startButton) startButton.style.display = "none";
-              if (stopButton) stopButton.style.display = "block";
-              if (statusBox) {
-                statusBox.innerText = `ステータス: 「${currentSearchWord}」を探索中...`;
-                statusBox.style.color = "#00ff00";
-              }
-              video.onloadeddata = () => { predictWebcam(); };
-            }
-          });
-        });
-      } catch (e) {
-        console.error("Peer初期化失敗:", e);
-      }
-
-      if (statusBox) {
-        statusBox.innerText = "ステータス: YOLOv8n & CLIPモデルをロード中...";
-        statusBox.style.color = "#ffc107";
-      }
-
-      try {
-        // 1. 位置検出用 YOLOv8n (ONNX) のロード
-        yoloSession = await ort.InferenceSession.create('./yolov8n.onnx', {
-          executionProviders: ['wasm']
-        });
-
-        // 2. 言語判定用 CLIP のロード
-        const { pipeline } = window.TransformersHelper;
-        clipClassifier = await pipeline('zero-shot-image-classification', 'Xenova/clip-vit-base-patch32', {
-          device: 'wasm'
-        });
-
-        isModelsLoaded = true;
-        if (statusBox) {
-          statusBox.innerText = "ステータス: 準備完了 (ハイブリッドモード)";
-          statusBox.style.color = "#00ff00";
-        }
-      } catch (err) {
-        console.error("モデルロード失敗:", err);
-        if (statusBox) {
-          statusBox.innerText = "ステータス: AIモデルのロードに失敗しました (ファイル配置を確認してください)";
-          statusBox.style.color = "#dc3545";
-        }
+    window.addEventListener('DOMContentLoaded', () => {
+      const savedIp = localStorage.getItem("pc_server_ip");
+      if (savedIp) {
+        document.getElementById("serverIpInput").value = savedIp;
       }
     });
 
-    window.connectToPC = function() {
-      const pcIdInput = document.getElementById("pcIdInput");
-      if (!pcIdInput) return;
-      const pcId = pcIdInput.value.trim();
-      if (!pcId) { alert("PCのIDを入力してください！"); return; }
-      if (connStatus) {
-        connStatus.innerText = "ステータス: 接続中...";
-        connStatus.style.color = "#ffc107";
+    function saveIp() {
+      const ip = document.getElementById("serverIpInput").value.trim();
+      if (!ip) return alert("IPアドレスを入力してください");
+      localStorage.setItem("pc_server_ip", ip);
+      setStatus("IPアドレスを保存しました ✅", "#28a745");
+    }
+
+    async function startCameraAndSearch() {
+      const ip = document.getElementById("serverIpInput").value.trim();
+      if (!ip) return alert("先にパソコンのIPアドレスを入力・保存してください");
+
+      document.getElementById("startButton").style.display = "none";
+      document.getElementById("stopButton").style.display = "block";
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: false
+        });
+        video.srcObject = stream;
+        video.onloadeddata = () => beginLoop();
+      } catch (err) {
+        alert("カメラ起動エラー: " + err.message);
+        stopSearch();
       }
-      conn = peer.connect(pcId);
-      conn.on('open', () => {
-        if (connStatus) {
-          connStatus.innerText = "ステータス: 接続完了 ✅";
-          connStatus.style.color = "#28a745";
-        }
-        if (startButton) {
-          startButton.disabled = false;
-          startButton.innerText = "遠隔カメラ起動 & 探索スタート";
-        }
-      });
-    };
+    }
 
-    window.updateTarget = function() {
-      const targetObj = document.getElementById("targetObject");
-      if (!targetObj) return;
-      const inputVal = targetObj.value.trim();
-      if (!inputVal) { alert("探すものを入力してください！"); return; }
-      currentSearchWord = inputVal;
-      if (statusBox) {
-        statusBox.innerText = `🎯 「${currentSearchWord}」を探します`;
-        statusBox.style.color = "#00ff00";
-      }
-    };
+    function beginLoop() {
+      isSearching = true;
+      setStatus("🔍 PCサーバーへ映像を送信して探索中...", "#00ff00");
+      renderOverlay();
 
-    window.startCamera = function() {
-      const targetObj = document.getElementById("targetObject");
-      if (!targetObj) return;
-      const inputVal = targetObj.value.trim();
-      if (!inputVal) {
-        alert("探すものを入力してください！");
-        targetObj.focus();
-        return;
-      }
-      if (!conn || !conn.open) { alert("先にPCと接続してください！"); return; }
-      currentSearchWord = inputVal;
-      conn.send({ action: 'start', keyword: currentSearchWord, smartphoneId: peer.id });
-      if (statusBox) statusBox.innerText = "ステータス: 遠隔カメラ起動要求を送信中...";
-    };
+      // 約1.5秒ごとにPCサーバーへフレームを送信
+      searchTimer = setInterval(async () => {
+        if (!isSearching || isRequestInFlight || video.videoWidth === 0) return;
+        await sendFrameToPC();
+      }, 1500);
+    }
 
-    window.stopCamera = function() {
-      if (conn && conn.open) conn.send({ action: 'stop' });
-      webcamRunning = false;
-      cachedBoxes = [];
-      if (video && video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
-      if (video) video.srcObject = null;
-      if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (stopButton) stopButton.style.display = "none";
-      if (startButton) startButton.style.display = "block";
-      if (statusBox) statusBox.innerText = "ステータス: 停止しました";
-    };
+    async function sendFrameToPC() {
+      const ip = document.getElementById("serverIpInput").value.trim();
+      const keyword = document.getElementById("targetObject").value.trim() || "object";
 
-    async function predictWebcam() {
-      if (!webcamRunning) return;
+      isRequestInFlight = true;
+      try {
+        const tempCanvas = document.createElement("canvas");
+        tempCanvas.width = 480;
+        tempCanvas.height = Math.round(video.videoHeight * (480 / video.videoWidth));
+        const tCtx = tempCanvas.getContext("2d");
+        tCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
 
-      if (video && video.videoWidth > 0 && video.videoHeight > 0) {
-        const displayWidth = video.clientWidth;
-        const displayHeight = video.clientHeight;
-        if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
-          canvas.width = displayWidth;
-          canvas.height = displayHeight;
-        }
-      }
+        tempCanvas.toBlob(async (blob) => {
+          const formData = new FormData();
+          formData.append("image", blob, "frame.jpg");
+          formData.append("keyword", keyword);
 
-      if (video && video.currentTime !== lastVideoTime) {
-        lastVideoTime = video.currentTime;
-
-        const now = Date.now();
-        // 1.5秒ごとにハイブリッド推論を実行
-        if (now - lastProcessTime > 1500 && isModelsLoaded) {
-          lastProcessTime = now;
           try {
-            const detectedBoxes = await runHybridDetection(video, currentSearchWord);
-            if (detectedBoxes && detectedBoxes.length > 0) {
-              cachedBoxes = detectedBoxes;
-              boxExpireTime = Date.now() + 2000;
+            const response = await fetch(`http://${ip}:5000/detect`, {
+              method: "POST",
+              body: formData
+            });
+            const data = await response.json();
 
-              const dataUrl = captureFrameAsDataURL(video);
-              if (statusBox) {
-                statusBox.innerText = `🎉 「${currentSearchWord}」を発見しました！`;
-                statusBox.style.color = "#00ff00";
-              }
-              addGalleryThumbnail(dataUrl);
+            if (data.detections && data.detections.length > 0) {
+              cachedDetections = data.detections;
+              boxExpireTime = Date.now() + 2500;
+              setStatus(`🎉 発見！ (${data.detections.length}件)`, "#00ff00");
             } else {
-              if (statusBox) {
-                statusBox.innerText = `ステータス: 「${currentSearchWord}」を探索中...`;
-                statusBox.style.color = "#00ff00";
-              }
+              setStatus(`🔍 探索中...（「${keyword}」未検出）`, "#ffc107");
             }
-          } catch (err) {
-            console.error("ハイブリッド推論エラー:", err);
+          } catch (netErr) {
+            console.error(netErr);
+            setStatus("通信エラー: PCサーバーに接続できません", "#dc3545");
+          } finally {
+            isRequestInFlight = false;
           }
-        }
-      }
+        }, "image/jpeg", 0.7);
 
-      // バウンディングボックスの描画ループ
-      if (ctx && canvas) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        if (Date.now() < boxExpireTime && cachedBoxes.length > 0) {
-          const scaleX = canvas.width / video.videoWidth;
-          const scaleY = canvas.height / video.videoHeight;
-
-          cachedBoxes.forEach(box => {
-            const [x1, y1, x2, y2] = box;
-            const x = x1 * scaleX;
-            const y = y1 * scaleY;
-            const w = (x2 - x1) * scaleX;
-            const h = (y2 - y1) * scaleY;
-
-            ctx.strokeStyle = "#00ff00";
-            ctx.lineWidth = 4;
-            ctx.strokeRect(x, y, w, h);
-            ctx.fillStyle = "rgba(0, 255, 0, 0.7)";
-            ctx.fillRect(x, y > 25 ? y - 25 : 0, w, 25);
-            ctx.fillStyle = "#000";
-            ctx.font = "bold 14px sans-serif";
-            ctx.fillText(currentSearchWord, x + 5, y > 25 ? y - 7 : 18);
-          });
-        }
-      }
-
-      if (webcamRunning) {
-        window.requestAnimationFrame(predictWebcam);
+      } catch (e) {
+        isRequestInFlight = false;
       }
     }
 
-    // YOLOv8nで位置を出し、候補領域をCLIPで判定する核心ロジック
-    async function runHybridDetection(videoElement, searchQuery) {
-      const origW = videoElement.videoWidth;
-      const origH = videoElement.videoHeight;
+    function renderOverlay() {
+      if (!isSearching) return;
 
-      // 1. YOLOv8n用に640x640へリフォーム＆テンソル化
-      const inputTensor = preprocessVideoToNCHW(videoElement, 640, 640);
-      const results = await yoloSession.run({ images: inputTensor });
-      const outputKey = Object.keys(results)[0];
-      const outputData = results[outputKey].data;
-
-      // 2. YOLOの出力から物体候補のボックスを抽出 (Confidence > 0.35)
-      const rawBoxes = [];
-      const numBoxes = 8400;
-      for (let i = 0; i < numBoxes; i++) {
-        const confidence = outputData[4 * numBoxes + i];
-        if (confidence > 0.35) {
-          const cx = outputData[0 * numBoxes + i] * (origW / 640);
-          const cy = outputData[1 * numBoxes + i] * (origH / 640);
-          const w = outputData[2 * numBoxes + i] * (origW / 640);
-          const h = outputData[3 * numBoxes + i] * (origH / 640);
-
-          const x1 = Math.max(0, cx - w / 2);
-          const y1 = Math.max(0, cy - h / 2);
-          const x2 = Math.min(origW, cx + w / 2);
-          const y2 = Math.min(origH, cy + h / 2);
-
-          if ((x2 - x1) > 30 && (y2 - y1) > 30) { // 小さすぎるノイズをスキップ
-            rawBoxes.push([x1, y1, x2, y2]);
-          }
+      if (video.clientWidth > 0 && video.clientHeight > 0) {
+        if (canvas.width !== video.clientWidth || canvas.height !== video.clientHeight) {
+          canvas.width = video.clientWidth;
+          canvas.height = video.clientHeight;
         }
       }
 
-      // 3. 検出された各ボックスの画像を切り抜き、CLIPで言葉と一致するかチェック
-      const matchedBoxes = [];
-      const tempCanvas = document.createElement('canvas');
-      const tempCtx = tempCanvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      for (let box of rawBoxes.slice(0, 5)) { // 負荷対策として上位最大5個までを検証
-        const [x1, y1, x2, y2] = box;
-        const bw = x2 - x1;
-        const bh = y2 - y1;
+      if (Date.now() < boxExpireTime && cachedDetections.length > 0) {
+        cachedDetections.forEach(item => {
+          const [ymin, xmin, ymax, xmax] = item.box_2d;
+          const x = (xmin / 1000) * canvas.width;
+          const y = (ymin / 1000) * canvas.height;
+          const w = ((xmax - xmin) / 1000) * canvas.width;
+          const h = ((ymax - ymin) / 1000) * canvas.height;
 
-        tempCanvas.width = bw;
-        tempCanvas.height = bh;
-        tempCtx.drawImage(videoElement, x1, y1, bw, bh, 0, 0, bw, bh);
-        const croppedDataUrl = tempCanvas.toDataURL("image/jpeg", 0.8);
+          ctx.strokeStyle = "#00ff00";
+          ctx.lineWidth = 4;
+          ctx.strokeRect(x, y, w, h);
 
-        // CLIPによるゼロショット分類
-        const clipResult = await clipClassifier(croppedDataUrl, [searchQuery, "something else", "background"]);
-        if (clipResult && clipResult.length > 0) {
-          const top = clipResult[0];
-          // 一致したラベルが指定ワードであり、かつスコアが一定以上の場合に採用
-          if (top.label === searchQuery && top.score > 0.35) {
-            matchedBoxes.push(box);
-          }
-        }
+          ctx.fillStyle = "rgba(0, 255, 0, 0.85)";
+          ctx.fillRect(x, y > 24 ? y - 24 : 0, 100, 24);
+          ctx.fillStyle = "#000";
+          ctx.font = "bold 13px sans-serif";
+          ctx.fillText(`${item.label} (${item.confidence})`, x + 6, y > 24 ? y - 7 : 17);
+        });
       }
 
-      return matchedBoxes;
+      requestAnimationFrame(renderOverlay);
     }
 
-    function preprocessVideoToNCHW(videoElement, targetWidth, targetHeight) {
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = targetWidth;
-      tempCanvas.height = targetHeight;
-      const tempCtx = tempCanvas.getContext('2d');
-      tempCtx.drawImage(videoElement, 0, 0, targetWidth, targetHeight);
-
-      const imgData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
-      const pixels = imgData.data;
-
-      const red = new Float32Array(targetWidth * targetHeight);
-      const green = new Float32Array(targetWidth * targetHeight);
-      const blue = new Float32Array(targetWidth * targetHeight);
-
-      for (let i = 0; i < pixels.length / 4; i++) {
-        red[i] = pixels[i * 4] / 255.0;
-        green[i] = pixels[i * 4 + 1] / 255.0;
-        blue[i] = pixels[i * 4 + 2] / 255.0;
+    function stopSearch() {
+      isSearching = false;
+      clearInterval(searchTimer);
+      cachedDetections = [];
+      if (video.srcObject) {
+        video.srcObject.getTracks().forEach(t => t.stop());
+        video.srcObject = null;
       }
-
-      const input = new Float32Array(3 * targetWidth * targetHeight);
-      input.set(red, 0);
-      input.set(green, targetWidth * targetHeight);
-      input.set(blue, 2 * targetWidth * targetHeight);
-
-      return new ort.Tensor('float32', input, [1, 3, targetWidth, targetHeight]);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      document.getElementById("stopButton").style.display = "none";
+      document.getElementById("startButton").style.display = "block";
+      setStatus("ステータス: 停止しました", "#ffc107");
     }
-
-    function captureFrameAsDataURL(videoElement) {
-      const tempCanvas = document.createElement("canvas");
-      tempCanvas.width = videoElement.videoWidth;
-      tempCanvas.height = videoElement.videoHeight;
-      const tempCtx = tempCanvas.getContext("2d");
-      tempCtx.drawImage(videoElement, 0, 0, tempCanvas.width, tempCanvas.height);
-      return tempCanvas.toDataURL("image/jpeg", 0.8);
-    }
-
-    function addGalleryThumbnail(dataUrl) {
-      const gallery = document.getElementById("imageGallery");
-      if (!gallery) return;
-      const img = document.createElement("img");
-      img.src = dataUrl;
-      img.style.cssText = "width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 2px solid #00ff00; cursor: pointer; flex-shrink: 0;";
-      img.onclick = () => {
-        const modal = document.getElementById("imagePreviewModal");
-        const previewImg = document.getElementById("previewImage");
-        if (modal && previewImg) {
-          previewImg.src = dataUrl;
-          modal.style.display = "flex";
-        }
-      };
-      gallery.prepend(img);
-    }
-
-    window.closePreview = function() {
-      const modal = document.getElementById("imagePreviewModal");
-      if (modal) modal.style.display = "none";
-    };
-
-    window.clearGallery = function() {
-      const gallery = document.getElementById("imageGallery");
-      if (gallery) gallery.innerHTML = "";
-    };
-
-    let html5QrCode = null;
-    window.startQrScanner = function() {
-      const readerContainer = document.getElementById("qr-reader");
-      readerContainer.style.display = "block";
-      if (!html5QrCode) {
-        html5QrCode = new Html5Qrcode("qr-reader");
-      }
-      html5QrCode.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 200, height: 200 } },
-        (decodedText) => {
-          document.getElementById("pcIdInput").value = decodedText;
-          window.stopQrScanner();
-          alert("PCのIDを読み込みました！「接続」ボタンを押してください。");
-        },
-        (errorMessage) => {}
-      ).catch(err => {
-        alert("カメラの起動に失敗しました: " + err);
-      });
-    };
-
-    window.stopQrScanner = function() {
-      if (html5QrCode) {
-        html5QrCode.stop().then(() => {
-          document.getElementById("qr-reader").style.display = "none";
-        }).catch(err => { console.error(err); });
-      }
-    };
   </script>
-
-  <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
-  <script>eruda.init();</script>
 </body>
 </html>
