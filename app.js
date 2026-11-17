@@ -8,9 +8,7 @@ const stopButton = document.getElementById("stopButton");
 let isSearching = false;
 let searchTimer = null;
 let isRequestInFlight = false;
-let currentSearchWord = "cup";
 let lastSaveTime = 0;
-let translator = null;
 
 // 1. スマホの背面カメラを即座に起動
 async function initCamera() {
@@ -20,78 +18,53 @@ async function initCamera() {
       audio: false
     });
     video.srcObject = stream;
-    status.innerText = "ステータス: 準備完了 (翻訳AIを準備中...)";
+    status.innerText = "ステータス: 準備完了 (探索スタートを押してください)";
     status.style.color = "#00ff00";
-
-    // ブラウザ単体で動くオープンソース翻訳モデルのロード
-    if (window.transformersPipeline) {
-      status.innerText = "ステータス: 翻訳AIをロード中...";
-      translator = await window.transformersPipeline('translation', 'Xenova/opus-mt-ja-en');
-      status.innerText = "ステータス: 準備完了 (日本語対応OK)";
-      status.style.color = "#00ff00";
-    }
   } catch (err) {
-    console.error("初期化エラー:", err);
-    status.innerText = "エラー: カメラ権限または翻訳のロードに失敗";
+    console.error("カメラ起動エラー:", err);
+    status.innerText = "エラー: カメラ権限が許可されていません";
     status.style.color = "#ff4444";
   }
 }
 initCamera();
 
-// 2. 検索ワードの更新 ＆ 翻訳結果を入力欄に上書き
-window.updateTarget = async function() {
-  const inputElement = document.getElementById("targetObject");
-  const inputVal = inputElement.value.trim();
-  if (!inputVal) { alert("探すものを入力してください！"); return; }
-
-  let searchWord = inputVal.toLowerCase();
-
-  // 日本語が含まれている場合はブラウザ単体AIで翻訳
-  if (/[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uffef\u4e00-\u9faf]/.test(inputVal)) {
-    if (translator) {
-      status.innerText = "🔄 翻訳中...";
-      try {
-        const output = await translator(inputVal);
-        if (output && output[0] && output[0].translation_text) {
-          searchWord = output[0].translation_text.trim().toLowerCase();
-        }
-      } catch (e) {
-        console.error("翻訳エラー:", e);
-      }
-    }
+// 2. 検索ワードの更新（決定ボタンが押された時）
+window.updateTarget = function() {
+  const inputVal = document.getElementById("targetObject").value.trim();
+  if (!inputVal) {
+    alert("探すものを入力してください！");
+    return;
   }
-
-  currentSearchWord = searchWord;
-  
-  // ★ 入力欄の文字を翻訳後の英語に上書きする
-  inputElement.value = currentSearchWord;
-
-  status.innerText = `🎯 「${inputVal}」 ➔ 英語: [${currentSearchWord}] に変換しました`;
+  status.innerText = `🎯 「${inputVal}」をセットしました (探索スタートで開始)`;
   status.style.color = "#00ff00";
 };
 
 // 3. 探索スタート（ループ開始）
-window.startDetection = async function() {
+window.startDetection = function() {
   const serverIp = document.getElementById("serverIp").value.trim();
+  const inputVal = document.getElementById("targetObject").value.trim();
+
   if (!serverIp) {
     alert("PCのIPアドレスを入力してください！");
     document.getElementById("serverIp").focus();
     return;
   }
-
-  // スタート時に入力欄が日本語なら自動で翻訳＆上書きを実行
-  await window.updateTarget();
+  if (!inputVal) {
+    alert("探すものを入力してください！");
+    document.getElementById("targetObject").focus();
+    return;
+  }
 
   isSearching = true;
   startButton.style.display = "none";
   stopButton.style.display = "block";
-  status.innerText = `🔍 「${currentSearchWord}」をYOLO-Worldで探索中...`;
+  status.innerText = `🔍 「${inputVal}」を探索中...`;
   status.style.color = "#00ff00";
 
   // 0.5秒ごとにPCサーバーへフレームを送信
   searchTimer = setInterval(async () => {
     if (!isSearching || isRequestInFlight || video.videoWidth === 0) return;
-    await sendFrameToPC(serverIp);
+    await sendFrameToPC(serverIp, inputVal);
   }, 500);
 };
 
@@ -108,9 +81,10 @@ window.stopDetection = function() {
 };
 
 // 5. PCサーバーへ画像とキーワードを送信
-async function sendFrameToPC(ip) {
+async function sendFrameToPC(ip, keyword) {
   isRequestInFlight = true;
   try {
+    // 320px幅に縮小して軽量化
     const tempCanvas = document.createElement("canvas");
     tempCanvas.width = 320;
     tempCanvas.height = Math.round(video.videoHeight * (320 / video.videoWidth));
@@ -118,11 +92,14 @@ async function sendFrameToPC(ip) {
     tCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
 
     const blob = await new Promise(resolve => tempCanvas.toBlob(resolve, "image/jpeg", 0.6));
-    if (!blob) { isRequestInFlight = false; return; }
+    if (!blob) {
+      isRequestInFlight = false;
+      return;
+    }
 
     const formData = new FormData();
     formData.append("image", blob, "frame.jpg");
-    formData.append("keyword", currentSearchWord);
+    formData.append("keyword", keyword); // 日本語のまま送ってもサーバー側で翻訳されます
 
     const response = await fetch(`http://${ip}:5000/detect`, {
       method: "POST",
@@ -172,6 +149,7 @@ function drawDetections(detections) {
     ctx.font = "bold 14px sans-serif";
     ctx.fillText(`${det.label} (${det.confidence})`, x + 5, y > 25 ? y - 7 : 18);
 
+    // 3秒に1回、発見したシーンの切り抜きを履歴に保存
     const now = Date.now();
     if (now - lastSaveTime > 3000) {
       saveFoundImage({ x: x/scaleX, y: y/scaleY, width: w/scaleX, height: h/scaleY });
