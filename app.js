@@ -12,7 +12,7 @@ let isRequestInFlight = false;
 let currentSearchWord = "cup";
 let lastSaveTime = 0;
 
-// PeerJS初期化
+// PeerJS初期化（ページ読み込み時に自動でバックグラウンド接続待機）
 const peer = new Peer();
 let conn = null;
 
@@ -39,37 +39,23 @@ const jpToEnMap = {
   "人": "person", "ひと": "person"
 };
 
-// PC接続
-window.connectToPC = function() {
-  const pcId = document.getElementById("pcIdInput").value.trim();
-  if (!pcId) { alert("PCのIDを入力してください！"); return; }
-  
-  connStatus.innerText = "ステータス: 接続中...";
-  conn = peer.connect(pcId);
-  
-  conn.on('open', () => {
-    connStatus.innerText = "ステータス: 接続完了 ✅";
-    connStatus.style.color = "#28a745";
-    startButton.disabled = false;
-    startButton.innerText = "遠隔カメラ起動 & 探索スタート";
-    status.innerText = "ステータス: 準備完了";
+// 起動時にスマホ側のカメラをプレビュー表示しておく
+async function initCameraPreview() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ 
+      video: { facingMode: "environment" }, 
+      audio: false 
+    });
+    video.srcObject = stream;
+    status.innerText = "ステータス: 準備完了 (探索スタートを押してください)";
     status.style.color = "#00ff00";
-  });
-};
-
-peer.on('call', (call) => {
-  call.answer();
-  call.on('stream', (remoteStream) => {
-    video.srcObject = remoteStream;
-    webcamRunning = true;
-    startButton.style.display = "none";
-    stopButton.style.display = "block";
-    status.innerText = `ステータス: YOLO-World探索中... (${currentSearchWord})`;
-    status.style.color = "#00ff00";
-  });
-});
-
-let webcamRunning = false;
+  } catch (err) {
+    console.error("カメラ起動エラー:", err);
+    status.innerText = "エラー: カメラの起動に失敗しました";
+    status.style.color = "#ff4444";
+  }
+}
+initCameraPreview();
 
 // ターゲットの更新（辞書マップによる即時変換）
 window.updateTarget = function() {
@@ -78,30 +64,31 @@ window.updateTarget = function() {
 
   let searchWord = inputVal.toLowerCase();
 
-  // 辞書に登録されている日本語・カタカナなら即座に英語に変換
   if (jpToEnMap[inputVal]) {
     searchWord = jpToEnMap[inputVal];
-  } 
-  // すでに英語が入力されている場合はそのまま
-  else if (/^[a-zA-Z0-9\s]+$/.test(inputVal)) {
+  } else if (/^[a-zA-Z0-9\s]+$/.test(inputVal)) {
     searchWord = inputVal.toLowerCase();
   }
 
   currentSearchWord = searchWord;
   status.innerText = `🎯 「${inputVal}」 (${currentSearchWord}) を探します`;
   status.style.color = "#00ff00";
-  
-  // 入力欄も変換後の文字に更新
   document.getElementById("targetObject").value = currentSearchWord;
 };
 
-// 探索スタート（送信ループ開始）
+// 探索スタート（IPアドレスを入力して即座にYOLO-Worldへ送信開始）
 window.startCamera = function() {
   const inputVal = document.getElementById("targetObject").value.trim();
-  
+  const pcIp = document.getElementById("pcIdInput").value.trim();
+
   if (!inputVal) {
     alert("探すものを入力してください！");
     document.getElementById("targetObject").focus();
+    return;
+  }
+  if (!pcIp) {
+    alert("PCのIPアドレスを入力してください！");
+    document.getElementById("pcIdInput").focus();
     return;
   }
   
@@ -124,10 +111,6 @@ window.stopCamera = function() {
   isSearching = false;
   clearInterval(searchTimer);
   
-  if (video.srcObject) {
-    video.srcObject.getTracks().forEach(t => t.stop());
-    video.srcObject = null;
-  }
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   
   stopButton.style.display = "none";
@@ -141,7 +124,6 @@ async function sendFrameToPC() {
   isRequestInFlight = true;
 
   try {
-    // 画質を落として軽量化（幅320px）
     const tempCanvas = document.createElement("canvas");
     tempCanvas.width = 320;
     tempCanvas.height = Math.round(video.videoHeight * (320 / video.videoWidth));
