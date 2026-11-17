@@ -1,6 +1,11 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
+  <!-- Transformers.js (ブラウザ単体で動くオープンソースAI翻訳・モデル用) -->
+<script type="module">
+  import { pipeline } from 'https://cdn.jsdelivr.net/npm/@transformers.js/dist/transformers.min.js';
+  window.transformersPipeline = pipeline;
+</script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>YOLO-World リアルタイム探索ファインダー</title>
