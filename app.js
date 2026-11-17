@@ -10,6 +10,7 @@ let searchTimer = null;
 let isRequestInFlight = false;
 let currentSearchWord = "cup";
 let lastSaveTime = 0;
+let translator = null;
 
 // 1. スマホの背面カメラを即座に起動
 async function initCamera() {
@@ -19,33 +20,65 @@ async function initCamera() {
       audio: false
     });
     video.srcObject = stream;
-    status.innerText = "ステータス: 準備完了 (IPを入力して探索スタート)";
+    status.innerText = "ステータス: 準備完了 (翻訳AIを準備中...)";
     status.style.color = "#00ff00";
+
+    // ブラウザ単体で動くオープンソース翻訳モデルのロード（例として多言語対応の軽量モデル）
+    if (window.transformersPipeline) {
+      status.innerText = "ステータス: 翻訳AIをロード中...";
+      // 英語への翻訳に適した軽量モデル（Hugging Face Xenova/nllb-200 または t5系）
+      translator = await window.transformersPipeline('translation', 'Xenova/opus-mt-ja-en');
+      status.innerText = "ステータス: 準備完了 (日本語対応OK)";
+      status.style.color = "#00ff00";
+    }
   } catch (err) {
-    console.error("カメラ起動エラー:", err);
-    status.innerText = "エラー: カメラ権限が許可されていません";
+    console.error("初期化エラー:", err);
+    status.innerText = "エラー: カメラ権限または翻訳のロードに失敗";
     status.style.color = "#ff4444";
   }
 }
 initCamera();
 
-// 2. 検索ワードの更新
-window.updateTarget = function() {
-  const inputVal = document.getElementById("targetObject").value.trim().toLowerCase();
+// 2. 検索ワードの更新 ＆ ブラウザ単体での自動翻訳
+window.updateTarget = async function() {
+  const inputVal = document.getElementById("targetObject").value.trim();
   if (!inputVal) { alert("探すものを入力してください！"); return; }
-  currentSearchWord = inputVal;
-  status.innerText = `🎯 「${currentSearchWord}」を探します`;
+
+  let searchWord = inputVal.toLowerCase();
+
+  // 英語のみの場合はそのまま、日本語が含まれている場合はブラウザ単体AIで翻訳
+  if (/[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uffef\u4e00-\u9faf]/.test(inputVal)) {
+    if (translator) {
+      status.innerText = "🔄 翻訳中...";
+      try {
+        // AIモデルによる翻訳実行
+        const output = await translator(inputVal);
+        if (output && output[0] && output[0].translation_text) {
+          searchWord = output[0].translation_text.trim().toLowerCase();
+        }
+      } catch (e) {
+        console.error("翻訳エラー:", e);
+      }
+    }
+  }
+
+  currentSearchWord = searchWord;
+  status.innerText = `🎯 「${inputVal}」 ➔ 英語: [${currentSearchWord}] を探します`;
   status.style.color = "#00ff00";
+  document.getElementById("targetObject").value = currentSearchWord;
 };
 
 // 3. 探索スタート（ループ開始）
-window.startDetection = function() {
+window.startDetection = async function() {
   const serverIp = document.getElementById("serverIp").value.trim();
   if (!serverIp) {
     alert("PCのIPアドレスを入力してください！");
     document.getElementById("serverIp").focus();
     return;
   }
+
+  // スタート時にもし日本語のままなら一度翻訳を通す
+  await window.updateTarget();
 
   isSearching = true;
   startButton.style.display = "none";
@@ -76,7 +109,6 @@ window.stopDetection = function() {
 async function sendFrameToPC(ip) {
   isRequestInFlight = true;
   try {
-    // 320px幅に縮小して軽量化
     const tempCanvas = document.createElement("canvas");
     tempCanvas.width = 320;
     tempCanvas.height = Math.round(video.videoHeight * (320 / video.videoWidth));
@@ -138,7 +170,6 @@ function drawDetections(detections) {
     ctx.font = "bold 14px sans-serif";
     ctx.fillText(`${det.label} (${det.confidence})`, x + 5, y > 25 ? y - 7 : 18);
 
-    // 3秒に1回、発見したシーンの切り抜きを履歴に保存
     const now = Date.now();
     if (now - lastSaveTime > 3000) {
       saveFoundImage({ x: x/scaleX, y: y/scaleY, width: w/scaleX, height: h/scaleY });
