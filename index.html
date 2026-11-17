@@ -17,6 +17,7 @@
       height: 100vh;
       overflow: hidden;
       box-sizing: border-box;
+      justify-content: space-between; /* 上下に適度に配置 */
     }
 
     /* ヘッダー・設定エリア */
@@ -73,20 +74,30 @@
     #searchBtn {
       background: #28a745;
       font-size: 16px;
-      flex: 1;
-      padding: 12px;
+      width: 100%;
+      padding: 14px;
       box-shadow: 0 4px 10px rgba(40, 167, 69, 0.3);
     }
 
-    /* カメラ映像の表示エリア */
-    .viewfinder {
-      position: relative;
-      flex: 1;
-      background: #000;
+    /* カメラ映像の表示エリア（画面中央・縦幅の約1/3に制限） */
+    .viewfinder-container {
       display: flex;
       justify-content: center;
       align-items: center;
+      width: 100%;
+      padding: 10px 0;
+    }
+
+    .viewfinder {
+      position: relative;
+      width: 92%;
+      height: 30vh; /* スマホ縦幅の約3分の1 */
+      max-height: 280px;
+      background: #000;
+      border-radius: 12px;
       overflow: hidden;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.6);
+      border: 1px solid #333;
     }
 
     video {
@@ -105,23 +116,23 @@
       object-fit: cover;
     }
 
-    /* ステータスバー（画面下部） */
+    /* ステータス表示 */
     .status-bar {
       background: #1a1a1a;
-      padding: 12px 16px;
+      padding: 10px 16px;
       text-align: center;
       font-size: 14px;
       font-weight: 500;
       color: #00ffcc;
       border-top: 1px solid #333;
+      border-bottom: 1px solid #333;
     }
 
-    /* フッターアクションエリア */
+    /* フッターアクションエリア（常に押しやすい位置に固定） */
     .action-panel {
       background: #1e1e1e;
-      padding: 12px 16px;
-      display: flex;
-      gap: 10px;
+      padding: 14px 16px;
+      box-shadow: 0 -4px 12px rgba(0,0,0,0.5);
     }
   </style>
 </head>
@@ -138,10 +149,12 @@
     </div>
   </div>
 
-  <!-- カメラビューファインダー -->
-  <div class="viewfinder">
-    <video id="video" autoplay playsinline muted></video>
-    <canvas id="overlay"></canvas>
+  <!-- カメラビューファインダー（中央配置・高さ約1/3） -->
+  <div class="viewfinder-container">
+    <div class="viewfinder">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="overlay"></canvas>
+    </div>
   </div>
 
   <!-- ステータス表示 -->
@@ -149,7 +162,7 @@
     カメラを起動中...
   </div>
 
-  <!-- 探索スタートボタン -->
+  <!-- 探索スタートボタン（下部に固定・押しやすい大型サイズ） -->
   <div class="action-panel">
     <button id="searchBtn" onclick="toggleSearch()">探索スタート</button>
   </div>
