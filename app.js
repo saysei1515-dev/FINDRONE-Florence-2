@@ -9,6 +9,7 @@ let isSearching = false;
 let searchTimer = null;
 let isRequestInFlight = false;
 let lastSaveTime = 0;
+let currentFinalizedKeyword = "cup"; // 💡 翻訳・確定された検索キーワード
 
 // ================= PeerJS ＆ 遠隔カメラ接続管理 =================
 const peer = new Peer();
@@ -26,7 +27,7 @@ peer.on('call', (call) => {
   call.on('stream', (remoteStream) => {
     video.srcObject = remoteStream;
     webcamRunning = true;
-    status.innerText = "ステータス: 遠隔カメラ映像を受信中...";
+    status.innerText = `ステータス: 探索中... (${currentFinalizedKeyword})`;
     status.style.color = "#00ff00";
   });
 });
@@ -43,11 +44,11 @@ window.connectToPC = function() {
 
   conn = peer.connect(pcId);
   conn.on('open', () => {
-    status.innerText = "ステータス: PC接続完了 ✅ (カメを起動を押してください)";
+    status.innerText = "ステータス: PC接続完了 ✅";
     status.style.color = "#00ff00";
     if (startButton) {
       startButton.disabled = false;
-      startButton.innerText = "カメラを起動する"; // ← 接続完了後に表示を変更
+      startButton.innerText = "遠隔カメラ起動 & 探索スタート";
     }
     const connStatus = document.getElementById("connectionStatus");
     if (connStatus) {
@@ -127,10 +128,20 @@ window.updateTarget = async function() {
     if (!response.ok) throw new Error("翻訳サーバーエラー");
 
     const data = await response.json();
+    
+    // 1. 入力欄を翻訳後の英語に上書き
     inputElement.value = data.translated;
+    // 2. 確定キーワードを更新
+    currentFinalizedKeyword = data.translated;
     
     status.innerText = `🎯 「${keyword}」➔ 英語: [${data.translated}] に設定しました`;
     status.style.color = "#00ff00";
+
+    // 💡 すでに探索スタート中の場合は、決定ボタンを押して翻訳された瞬間に随時切り替える
+    if (isSearching) {
+      status.innerText = `🔍 「${currentFinalizedKeyword}」を探索中... (変更適用)`;
+      status.style.color = "#00ff00";
+    }
 
   } catch (err) {
     console.error("翻訳リクエストエラー:", err);
@@ -160,23 +171,22 @@ window.startDetection = async function() {
     return;
   }
 
-  // 1. 翻訳がまだなら一度翻訳を実行
+  // スタート時にもし翻訳がまだなら一度翻訳を実行して確定させる
   await window.updateTarget();
-  const finalizedKeyword = document.getElementById("targetObject").value.trim();
 
-  // 2. 別PCへ遠隔カメラ起動の指示を送信
-  conn.send({ action: 'start', keyword: finalizedKeyword, smartphoneId: peer.id });
+  // 別PCへ遠隔カメラ起動の指示を送信
+  conn.send({ action: 'start', keyword: currentFinalizedKeyword, smartphoneId: peer.id });
 
   isSearching = true;
   startButton.style.display = "none";
   stopButton.style.display = "block";
-  status.innerText = `🔍 「${finalizedKeyword}」をYOLO-Worldで探索中...`;
+  status.innerText = `🔍 「${currentFinalizedKeyword}」をYOLO-Worldで探索中...`;
   status.style.color = "#00ff00";
 
-  // 3. 0.5秒ごとにPCサーバーへフレームを送信し、YOLO-World検出を実行
+  // 0.5秒ごとにPCサーバーへフレームと確定済みキーワードを送信
   searchTimer = setInterval(async () => {
     if (!isSearching || isRequestInFlight || video.videoWidth === 0) return;
-    await sendFrameToPC(serverIp, finalizedKeyword);
+    await sendFrameToPC(serverIp, currentFinalizedKeyword);
   }, 500);
 };
 
