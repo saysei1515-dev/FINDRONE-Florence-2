@@ -187,7 +187,11 @@
           audio: false
         });
         video.srcObject = stream;
-        video.onloadeddata = () => beginLoop();
+        await video.play();
+        
+        // 確実にループを開始させる
+        beginLoop();
+
       } catch (err) {
         alert("カメラ起動エラー: " + err.message);
         stopSearch();
@@ -195,6 +199,7 @@
     }
 
     function beginLoop() {
+      if (isSearching) return;
       isSearching = true;
       setStatus("🔍 PCサーバーへ映像を送信して探索中...", "#00ff00");
       renderOverlay();
