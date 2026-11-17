@@ -8,6 +8,29 @@ let searchTimer = null;
 let isRequestInFlight = false;
 let currentSearchWord = "guitar";
 
+// 📖 よく使う日本語・カタカナを英語に変換する辞書マップ
+const jpToEnMap = {
+  // ギター・楽器系
+  "ギター": "guitar", "アコギ": "guitar", "エレキ": "guitar",
+  "ベース": "bass", "ピアノ": "piano", "ドラム": "drum",
+  
+  // 日用品・ガジェット系
+  "コップ": "cup", "カップ": "cup", "マグカップ": "cup",
+  "ペン": "pen", "ボールペン": "pen", "ノート": "book",
+  "スマホ": "cell phone", "スマートフォン": "cell phone", "携帯": "cell phone",
+  "パソコン": "laptop", "ノートパソコン": "laptop", "PC": "laptop",
+  "本": "book", "書籍": "book", "雑誌": "book",
+  "ボトル": "bottle", "ペットボトル": "bottle", "水筒": "bottle",
+  "イス": "chair", "椅子": "chair",
+  "机": "desk", "テーブル": "dining table",
+  "時計": "clock", "腕時計": "clock",
+  "リモコン": "remote", "めがね": "glasses", "メガネ": "glasses",
+  "バッグ": "bag", "かばん": "bag", "リュック": "backpack",
+  
+  // 人・その他
+  "人": "person", "ひと": "person"
+};
+
 // カメラ起動
 async function startCamera() {
   try {
@@ -25,54 +48,27 @@ async function startCamera() {
   }
 }
 
-// 🌐 翻訳API（MyMemory）を使った堅牢な自動翻訳関数
-async function translateToEnglish(text) {
-  // すでに半角英数字のみの場合はそのまま返す
-  if (/^[a-zA-Z0-9\s]+$/.test(text)) {
-    return text.trim().toLowerCase();
-  }
-
-  try {
-    status.innerText = `🔄 「${text}」を翻訳中...`;
-    
-    // MyMemory翻訳APIへリクエスト
-    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=ja|en`;
-    const res = await fetch(url);
-    const data = await res.json();
-
-    if (data && data.responseData && data.responseData.translatedText) {
-      let translated = data.responseData.translatedText.trim().toLowerCase();
-      
-      // 警告文やエラーが含まれていないかチェック
-      if (translated && !translated.includes("MYMEMORY WARNING") && !translated.includes("QUERY LENGTH")) {
-        console.log(`翻訳成功: ${text} -> ${translated}`);
-        return translated;
-      }
-    }
-  } catch (e) {
-    console.error("翻訳通信エラー:", e);
-  }
-
-  // 翻訳に失敗した場合は、そのままの文字を返す
-  return text.trim().toLowerCase();
-}
-
 window.updateTarget = function() {
   let inputVal = document.getElementById("targetObject").value.trim();
   if (!inputVal) { alert("探すものを入力してください！"); return; }
 
-  status.innerText = `🎯 「${inputVal}」の準備中...`;
-  status.style.color = "#ffc107";
+  let searchWord = inputVal.toLowerCase();
 
-  // 非同期でAPI翻訳を実行
-  translateToEnglish(inputVal).then(englishWord => {
-    currentSearchWord = englishWord;
-    status.innerText = `🎯 「${inputVal}」 ➔ 翻訳[${currentSearchWord}] を探します`;
-    status.style.color = "#00ff00";
-    
-    // 確認用に入力欄の文字を英語（または変換後の文字）に書き換える
-    document.getElementById("targetObject").value = currentSearchWord;
-  });
+  // 辞書に登録されている日本語・カタカナなら英語に変換
+  if (jpToEnMap[inputVal]) {
+    searchWord = jpToEnMap[inputVal];
+  } 
+  // すでに英語が入力されている場合はそのまま
+  else if (/^[a-zA-Z0-9\s]+$/.test(inputVal)) {
+    searchWord = inputVal.toLowerCase();
+  }
+
+  currentSearchWord = searchWord;
+  status.innerText = `🎯 「${inputVal}」 (${currentSearchWord}) を探します`;
+  status.style.color = "#00ff00";
+  
+  // 入力欄も変換後の文字に更新
+  document.getElementById("targetObject").value = currentSearchWord;
 };
 
 window.toggleSearch = function() {
@@ -111,7 +107,7 @@ async function sendFrameToPC(ip) {
 
   try {
     const tempCanvas = document.createElement("canvas");
-    tempCanvas.width = 320; // 軽量化のための幅320px
+    tempCanvas.width = 320; // 320pxに縮小して軽量化
     tempCanvas.height = Math.round(video.videoHeight * (320 / video.videoWidth));
     const tCtx = tempCanvas.getContext("2d");
     tCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
