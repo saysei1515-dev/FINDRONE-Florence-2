@@ -4,111 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PCサーバー連携 言葉探索カメラ</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background-color: #121212;
-      color: #e0e0e0;
-      margin: 0;
-      padding: 12px;
-      display: flex;
-      justify-content: center;
-      min-height: 100vh;
-      box-sizing: border-box;
-    }
-    .app-container {
-      width: 100%;
-      max-width: 480px;
-      background: #1e1e1e;
-      padding: 16px;
-      border-radius: 12px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
-      box-sizing: border-box;
-    }
-    h1 {
-      font-size: 1.15rem;
-      text-align: center;
-      margin: 0 0 14px 0;
-      color: #ffffff;
-    }
-    .control-group {
-      margin-bottom: 12px;
-      background: #252525;
-      padding: 10px 12px;
-      border-radius: 8px;
-      border: 1px solid #333;
-    }
-    .control-group label {
-      display: block;
-      font-size: 12px;
-      margin-bottom: 6px;
-      color: #bbb;
-      font-weight: bold;
-    }
-    .row {
-      display: flex;
-      gap: 6px;
-    }
-    input[type="text"] {
-      flex: 1;
-      padding: 9px 10px;
-      background: #161616;
-      border: 1px solid #444;
-      border-radius: 6px;
-      color: #fff;
-      font-size: 14px;
-      box-sizing: border-box;
-    }
-    button {
-      padding: 9px 14px;
-      border: none;
-      border-radius: 6px;
-      font-weight: bold;
-      font-size: 13px;
-      cursor: pointer;
-      color: #fff;
-      white-space: nowrap;
-    }
-    .btn-blue { background: #007bff; }
-    .btn-green { background: #28a745; width: 100%; padding: 12px; font-size: 15px; }
-    .btn-red { background: #dc3545; width: 100%; padding: 12px; font-size: 15px; }
-    .camera-container {
-      position: relative;
-      width: 100%;
-      background: #000;
-      border-radius: 8px;
-      overflow: hidden;
-      margin-bottom: 10px;
-      min-height: 280px;
-    }
-    video, canvas {
-      width: 100%;
-      display: block;
-    }
-    #outputCanvas {
-      position: absolute;
-      left: 0;
-      top: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-    }
-    .status-box {
-      margin-top: 10px;
-      padding: 10px;
-      background: #252525;
-      border-radius: 6px;
-      font-size: 13px;
-      text-align: center;
-      color: #ffc107;
-      border: 1px solid #333;
-    }
-    .hint {
-      font-size: 11px;
-      color: #888;
-      margin-top: 4px;
-    }
-  </style>
+  <link rel="stylesheet" href="style.css">
+  <!-- PeerJSのみ維持（またはローカルIP直叩きの場合は不要ですが構成互換のため残しています） -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 </head>
 <body>
   <div class="app-container">
@@ -117,192 +15,53 @@
     <!-- 1. PCのIPアドレス設定 -->
     <div class="control-group">
       <label for="serverIpInput">💻 パソコンのIPアドレス:</label>
-      <div class="row">
-        <input type="text" id="serverIpInput" placeholder="例: 192.168.1.15">
-        <button class="btn-blue" onclick="saveIp()">保存</button>
+      <div style="display: flex; gap: 5px; margin-bottom: 5px;">
+        <input type="text" id="serverIpInput" placeholder="例: 192.168.1.15" style="flex: 1;">
+        <button onclick="saveIp()" style="padding: 0 15px; background: #007bff; color: #fff; border: none; font-weight: bold; border-radius: 4px; cursor: pointer;">保存</button>
       </div>
-      <div class="hint">※PCのコマンドプロンプトで ipconfig と打って確認したIPv4アドレス</div>
+      <div style="font-size: 11px; color: #888;">※PCのコマンドプロンプトで ipconfig と打って確認したIPv4アドレス</div>
     </div>
 
     <!-- 2. 探す言葉の入力 -->
-    <div class="control-group">
+    <div class="control-group" style="position: relative;">
       <label for="targetObject">🔍 探したいもの（自由な言葉）:</label>
-      <div class="row">
-        <input type="text" id="targetObject" value="pen" placeholder="例: pen, phone, cup">
+      <div style="display: flex; gap: 5px;">
+        <input type="text" id="targetObject" value="pen" placeholder="例: pen, bottle, cup" autocomplete="off" oninput="filterSuggestions()" style="flex: 1;">
+        <button onclick="updateTarget()" style="padding: 0 15px; background: #007bff; color: #fff; border: none; font-weight: bold; border-radius: 4px; cursor: pointer;">決定</button>
       </div>
-      <div class="hint">※YOLO-Worldは英語の方が認識しやすいため「pen」「bottle」などの英語がおすすめです</div>
+      <!-- COCOサジェストリスト -->
+      <div id="customSuggestions" style="display: none; position: absolute; left: 10px; right: 10px; top: 65px; background: #181818; border: 1px solid #444; border-radius: 4px; max-height: 130px; overflow-y: auto; z-index: 1000; box-shadow: 0 4px 10px rgba(0,0,0,0.5);"></div>
+      <div style="font-size: 11px; color: #888; margin-top: 4px;">※YOLO-Worldは英語（pen, bottleなど）がおすすめです</div>
     </div>
 
     <!-- カメラ映像 & ボックス描画領域 -->
-    <div class="camera-container">
-      <video id="video" autoplay muted playsinline></video>
-      <canvas id="outputCanvas"></canvas>
+    <div class="camera-container" style="position: relative; width: 100%; background: #000; border-radius: 8px; overflow: hidden;">
+      <video id="video" autoplay muted playsinline style="width: 100%; display: block;"></video>
+      <canvas id="outputCanvas" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none;"></canvas>
     </div>
 
     <!-- スタート・ストップボタン -->
-    <div>
-      <button id="startButton" class="btn-green" onclick="startCameraAndSearch()">探索スタート</button>
-      <button id="stopButton" class="btn-red" onclick="stopSearch()" style="display: none;">探索ストップ</button>
+    <div class="button-group" style="margin-top: 10px;">
+      <button id="startButton" class="primary-btn" onclick="startCameraAndSearch()">探索スタート</button>
+      <button id="stopButton" class="danger-btn" onclick="stopSearch()" style="display: none;">探索ストップ</button>
     </div>
 
     <div id="status" class="status-box">ステータス: 待機中</div>
+
+    <!-- 発見履歴 -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
+      <h3 style="margin: 0; font-size: 14px;">📁 発見したアイテムの履歴</h3>
+      <button onclick="clearGallery()" style="padding: 5px 10px; background: #dc3545; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">履歴クリア</button>
+    </div>
+    <div id="imageGallery" class="gallery" style="display: flex; gap: 10px; overflow-x: auto; padding: 10px 0;"></div>
   </div>
 
-  <script>
-    let isSearching = false;
-    let isRequestInFlight = false;
-    let searchTimer = null;
-    let cachedDetections = [];
-    let boxExpireTime = 0;
+  <!-- 画像プレビュー用モーダル -->
+  <div id="imagePreviewModal" style="display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); align-items: center; justify-content: center; flex-direction: column;" onclick="closePreview()">
+    <img id="previewImage" style="max-width: 90%; max-height: 80%; border-radius: 8px; border: 3px solid #00ff00; object-fit: contain;">
+    <div style="color: #fff; margin-top: 15px; font-size: 14px; background: rgba(0,0,0,0.5); padding: 5px 15px; border-radius: 4px;">画面をタップして閉じる</div>
+  </div>
 
-    const video = document.getElementById("video");
-    const canvas = document.getElementById("outputCanvas");
-    const ctx = canvas.getContext("2d");
-    const statusBox = document.getElementById("status");
-
-    window.addEventListener('DOMContentLoaded', () => {
-      const savedIp = localStorage.getItem("pc_server_ip");
-      if (savedIp) {
-        document.getElementById("serverIpInput").value = savedIp;
-      }
-    });
-
-    function saveIp() {
-      const ip = document.getElementById("serverIpInput").value.trim();
-      if (!ip) return alert("IPアドレスを入力してください");
-      localStorage.setItem("pc_server_ip", ip);
-      setStatus("IPアドレスを保存しました ✅", "#28a745");
-    }
-
-    async function startCameraAndSearch() {
-      const ip = document.getElementById("serverIpInput").value.trim();
-      if (!ip) return alert("先にパソコンのIPアドレスを入力・保存してください");
-
-      document.getElementById("startButton").style.display = "none";
-      document.getElementById("stopButton").style.display = "block";
-
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } },
-          audio: false
-        });
-        video.srcObject = stream;
-        await video.play();
-        
-        // 確実にループを開始させる
-        beginLoop();
-
-      } catch (err) {
-        alert("カメラ起動エラー: " + err.message);
-        stopSearch();
-      }
-    }
-
-    function beginLoop() {
-      if (isSearching) return;
-      isSearching = true;
-      setStatus("🔍 PCサーバーへ映像を送信して探索中...", "#00ff00");
-      renderOverlay();
-
-      // 約1.5秒ごとにPCサーバーへフレームを送信
-      searchTimer = setInterval(async () => {
-        if (!isSearching || isRequestInFlight || video.videoWidth === 0) return;
-        await sendFrameToPC();
-      }, 1500);
-    }
-
-    async function sendFrameToPC() {
-      const ip = document.getElementById("serverIpInput").value.trim();
-      const keyword = document.getElementById("targetObject").value.trim() || "object";
-
-      isRequestInFlight = true;
-      try {
-        const tempCanvas = document.createElement("canvas");
-        tempCanvas.width = 480;
-        tempCanvas.height = Math.round(video.videoHeight * (480 / video.videoWidth));
-        const tCtx = tempCanvas.getContext("2d");
-        tCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
-
-        tempCanvas.toBlob(async (blob) => {
-          const formData = new FormData();
-          formData.append("image", blob, "frame.jpg");
-          formData.append("keyword", keyword);
-
-          try {
-            const response = await fetch(`http://${ip}:5000/detect`, {
-              method: "POST",
-              body: formData
-            });
-            const data = await response.json();
-
-            if (data.detections && data.detections.length > 0) {
-              cachedDetections = data.detections;
-              boxExpireTime = Date.now() + 2500;
-              setStatus(`🎉 発見！ (${data.detections.length}件)`, "#00ff00");
-            } else {
-              setStatus(`🔍 探索中...（「${keyword}」未検出）`, "#ffc107");
-            }
-          } catch (netErr) {
-            console.error(netErr);
-            setStatus("通信エラー: PCサーバーに接続できません", "#dc3545");
-          } finally {
-            isRequestInFlight = false;
-          }
-        }, "image/jpeg", 0.7);
-
-      } catch (e) {
-        isRequestInFlight = false;
-      }
-    }
-
-    function renderOverlay() {
-      if (!isSearching) return;
-
-      if (video.clientWidth > 0 && video.clientHeight > 0) {
-        if (canvas.width !== video.clientWidth || canvas.height !== video.clientHeight) {
-          canvas.width = video.clientWidth;
-          canvas.height = video.clientHeight;
-        }
-      }
-
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      if (Date.now() < boxExpireTime && cachedDetections.length > 0) {
-        cachedDetections.forEach(item => {
-          const [ymin, xmin, ymax, xmax] = item.box_2d;
-          const x = (xmin / 1000) * canvas.width;
-          const y = (ymin / 1000) * canvas.height;
-          const w = ((xmax - xmin) / 1000) * canvas.width;
-          const h = ((ymax - ymin) / 1000) * canvas.height;
-
-          ctx.strokeStyle = "#00ff00";
-          ctx.lineWidth = 4;
-          ctx.strokeRect(x, y, w, h);
-
-          ctx.fillStyle = "rgba(0, 255, 0, 0.85)";
-          ctx.fillRect(x, y > 24 ? y - 24 : 0, 100, 24);
-          ctx.fillStyle = "#000";
-          ctx.font = "bold 13px sans-serif";
-          ctx.fillText(`${item.label} (${item.confidence})`, x + 6, y > 24 ? y - 7 : 17);
-        });
-      }
-
-      requestAnimationFrame(renderOverlay);
-    }
-
-    function stopSearch() {
-      isSearching = false;
-      clearInterval(searchTimer);
-      cachedDetections = [];
-      if (video.srcObject) {
-        video.srcObject.getTracks().forEach(t => t.stop());
-        video.srcObject = null;
-      }
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      document.getElementById("stopButton").style.display = "none";
-      document.getElementById("startButton").style.display = "block";
-      setStatus("ステータス: 停止しました", "#ffc107");
-    }
-  </script>
+  <script src="app.js"></script>
 </body>
 </html>
