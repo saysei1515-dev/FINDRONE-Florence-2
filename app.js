@@ -10,25 +10,87 @@ let searchTimer = null;
 let isRequestInFlight = false;
 let lastSaveTime = 0;
 
-// 1. スマホの背面カメラを即座に起動
-async function initCamera() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment" },
-      audio: false
-    });
-    video.srcObject = stream;
-    status.innerText = "ステータス: 準備完了 (探索スタートを押してください)";
-    status.style.color = "#00ff00";
-  } catch (err) {
-    console.error("カメラ起動エラー:", err);
-    status.innerText = "エラー: カメラ権限が許可されていません";
-    status.style.color = "#ff4444";
-  }
-}
-initCamera();
+// ================= PeerJS ＆ 遠隔カメラ接続管理 =================
+const peer = new Peer();
+let conn = null;
+let webcamRunning = false;
+let html5QrCode = null;
 
-// 2. 検索ワードの決定＆サーバーでの翻訳（決定ボタンを押した時）
+peer.on('open', (id) => {
+  console.log("スマホ側 Peer ID:", id);
+});
+
+// 別PCからのカメラ映像（ストリーム）を受信したときの処理
+peer.on('call', (call) => {
+  call.answer();
+  call.on('stream', (remoteStream) => {
+    video.srcObject = remoteStream;
+    webcamRunning = true;
+    status.innerText = "ステータス: 遠隔カメラ映像を受信中...";
+    status.style.color = "#00ff00";
+  });
+});
+
+// PC接続ボタン
+window.connectToPC = function() {
+  const pcId = document.getElementById("pcIdInput").value.trim();
+  if (!pcId) {
+    alert("PCのIDを入力してください！");
+    return;
+  }
+  status.innerText = "ステータス: PCに接続中...";
+  status.style.color = "#ffc107";
+
+  conn = peer.connect(pcId);
+  conn.on('open', () => {
+    status.innerText = "ステータス: PC接続完了 ✅ (探索スタートを押してください)";
+    status.style.color = "#00ff00";
+    if (startButton) startButton.disabled = false;
+  });
+  conn.on('error', (err) => {
+    console.error("Peer接続エラー:", err);
+    status.innerText = "エラー: PCとの接続に失敗しました";
+    status.style.color = "#ff4444";
+  });
+};
+
+// QRコードスキャン機能（別PCのIDを読み取る）
+window.startQrScanner = function() {
+  const readerContainer = document.getElementById("qr-reader");
+  if (readerContainer) readerContainer.style.display = "block";
+
+  if (!html5QrCode) {
+    html5QrCode = new Html5Qrcode("qr-reader");
+  }
+
+  html5QrCode.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: { width: 200, height: 200 } },
+    (decodedText) => {
+      const pcIdInput = document.getElementById("pcIdInput");
+      if (pcIdInput) pcIdInput.value = decodedText;
+      window.stopQrScanner();
+      alert("PCのIDを読み込みました！「接続」ボタンを押してください。");
+    },
+    (errorMessage) => {}
+  ).catch(err => {
+    alert("カメラの起動に失敗しました: " + err);
+  });
+};
+
+window.stopQrScanner = function() {
+  if (html5QrCode && html5QrCode.isScanning) {
+    html5QrCode.stop().then(() => {
+      const readerContainer = document.getElementById("qr-reader");
+      if (readerContainer) readerContainer.style.display = "none";
+    }).catch(err => {
+      console.error("QRスキャナーの停止に失敗しました:", err);
+    });
+  }
+};
+
+
+// ================= 検索ワード翻訳（決定ボタン） =================
 window.updateTarget = async function() {
   const serverIp = document.getElementById("serverIp").value.trim();
   const inputElement = document.getElementById("targetObject");
@@ -39,7 +101,7 @@ window.updateTarget = async function() {
     return;
   }
   if (!serverIp) {
-    alert("先にお手元のPCのIPアドレスを入力してください！");
+    alert("PCのIPアドレスを入力してください！");
     document.getElementById("serverIp").focus();
     return;
   }
@@ -57,8 +119,6 @@ window.updateTarget = async function() {
     if (!response.ok) throw new Error("翻訳サーバーエラー");
 
     const data = await response.json();
-    
-    // ★ 翻訳された英語を入力欄に上書き！
     inputElement.value = data.translated;
     
     status.innerText = `🎯 「${keyword}」➔ 英語: [${data.translated}] に設定しました`;
@@ -71,7 +131,8 @@ window.updateTarget = async function() {
   }
 };
 
-// 3. 探索スタート（ループ開始）
+
+// ================= 探索スタート・ストップ =================
 window.startDetection = async function() {
   const serverIp = document.getElementById("serverIp").value.trim();
   const inputVal = document.getElementById("targetObject").value.trim();
@@ -86,10 +147,17 @@ window.startDetection = async function() {
     document.getElementById("targetObject").focus();
     return;
   }
+  if (!conn || !conn.open) {
+    alert("先にPCと接続してください！");
+    return;
+  }
 
-  // スタート時にもし翻訳がまだなら自動で一度翻訳＆上書きを実行
+  // 1. 翻訳がまだなら一度翻訳を実行
   await window.updateTarget();
   const finalizedKeyword = document.getElementById("targetObject").value.trim();
+
+  // 2. 別PCへ遠隔カメラ起動の指示を送信
+  conn.send({ action: 'start', keyword: finalizedKeyword, smartphoneId: peer.id });
 
   isSearching = true;
   startButton.style.display = "none";
@@ -97,17 +165,26 @@ window.startDetection = async function() {
   status.innerText = `🔍 「${finalizedKeyword}」をYOLO-Worldで探索中...`;
   status.style.color = "#00ff00";
 
-  // 0.5秒ごとにPCサーバーへフレームを送信（翻訳済みの英語キーワードを送信）
+  // 3. 0.5秒ごとにPCサーバーへフレームを送信し、YOLO-World検出を実行
   searchTimer = setInterval(async () => {
     if (!isSearching || isRequestInFlight || video.videoWidth === 0) return;
     await sendFrameToPC(serverIp, finalizedKeyword);
   }, 500);
 };
 
-// 4. 探索ストップ
 window.stopDetection = function() {
   isSearching = false;
   clearInterval(searchTimer);
+  
+  if (conn && conn.open) {
+    conn.send({ action: 'stop' });
+  }
+
+  webcamRunning = false;
+  if (video.srcObject) {
+    video.srcObject.getTracks().forEach(t => t.stop());
+    video.srcObject = null;
+  }
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   stopButton.style.display = "none";
@@ -116,7 +193,8 @@ window.stopDetection = function() {
   status.style.color = "#aaa";
 };
 
-// 5. PCサーバーへ画像と翻訳済みキーワードを送信
+
+// ================= PCサーバーへ画像送信 ＆ 検出 =================
 async function sendFrameToPC(ip, keyword) {
   isRequestInFlight = true;
   try {
@@ -153,7 +231,8 @@ async function sendFrameToPC(ip, keyword) {
   }
 }
 
-// 6. 検出枠（バウンディングボックス）の描画 ＆ 履歴保存
+
+// ================= 検出枠の描画 ＆ 履歴保存 =================
 function drawDetections(detections) {
   if (video.videoWidth > 0 && video.videoHeight > 0) {
     canvas.width = video.clientWidth;
@@ -192,17 +271,21 @@ function drawDetections(detections) {
   });
 }
 
+
 // ================= 発見履歴・フォルダ機能 =================
 window.openHistoryFolder = function() {
-  document.getElementById("historyFolderModal").style.display = "flex";
+  const modal = document.getElementById("historyFolderModal");
+  if (modal) modal.style.display = "flex";
 };
 
 window.closeHistoryFolder = function() {
-  document.getElementById("historyFolderModal").style.display = "none";
+  const modal = document.getElementById("historyFolderModal");
+  if (modal) modal.style.display = "none";
 };
 
 window.clearGallery = function() {
-  document.getElementById("imageGallery").innerHTML = "";
+  const gallery = document.getElementById("imageGallery");
+  if (gallery) gallery.innerHTML = "";
 };
 
 function addGalleryThumbnail(dataUrl) {
@@ -211,7 +294,7 @@ function addGalleryThumbnail(dataUrl) {
 
   const img = document.createElement("img");
   img.src = dataUrl;
-  img.style.cssText = "width: 100%; height: 100px; object-fit: cover; border-radius: 6px; border: 2px solid #00ff00; cursor: pointer;";
+  img.style.cssText = "width: 100px; height: 100px; object-fit: cover; border-radius: 6px; border: 2px solid #00ff00; cursor: pointer; flex-shrink: 0;";
   img.onclick = () => {
     const modal = document.getElementById("imagePreviewModal");
     const previewImg = document.getElementById("previewImage");
