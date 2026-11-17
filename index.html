@@ -4,9 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>AI リアルタイム探索ファインダー</title>
-  <!-- PeerJS & QRスキャナーCDN -->
+  <!-- PeerJS CDN -->
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <style>
     /* 全体・ダークモードのベース設定 (スマホのバーを考慮した100dvh) */
     body {
@@ -26,10 +25,10 @@
     /* コントロールパネル */
     .control-panel {
       background: #1e1e1e;
-      padding: 8px 12px;
+      padding: 10px 12px;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 8px;
       border-bottom: 1px solid #333;
       box-shadow: 0 4px 12px rgba(0,0,0,0.5);
       z-index: 10;
@@ -177,19 +176,9 @@
       <input type="text" id="pcIdInput" placeholder="PCのIPアドレス (例: 192.168.11.x)" />
       <button onclick="connectToPC()" style="background: #007bff;">接続</button>
     </div>
-
-    <!-- ② QRコード読み取り専用エリア（独立） -->
-    <div style="background: #252525; padding: 6px 8px; border-radius: 6px; border: 1px dashed #444; display: flex; flex-direction: column; gap: 4px;">
-      <div style="display: flex; gap: 6px;">
-        <button onclick="startQrScanner()" style="flex: 1; background: #17a2b8; font-size: 12px; padding: 6px;">📷 QRコードでIPを読み取る</button>
-        <button onclick="stopQrScanner()" style="background: #6c757d; font-size: 12px; padding: 6px;">閉じる</button>
-      </div>
-      <div id="qr-reader" style="width: 100%; max-width: 200px; margin: 4px auto; display: none;"></div>
-    </div>
-
     <div id="connectionStatus" style="font-size: 11px; color: #888; text-align: center;">ステータス: 未接続</div>
 
-    <!-- ③ 探すもの入力エリア -->
+    <!-- ② 探すもの入力エリア -->
     <div class="input-row">
       <input type="text" id="targetObject" value="cup" placeholder="探すもの (例: コップ, ギター)" autocomplete="off" />
       <button onclick="updateTarget()" style="background: #007bff;">決定</button>
@@ -219,40 +208,6 @@
     <button id="startButton" onclick="startCamera()" disabled>PCと接続してください</button>
     <button id="stopButton" onclick="stopCamera()" style="display:none;">探索ストップ</button>
   </div>
-
-  <!-- QRスキャナー制御用スクリプト -->
-  <script>
-    let html5QrCode = null;
-    function startQrScanner() {
-      const readerContainer = document.getElementById("qr-reader");
-      readerContainer.style.display = "block";
-      if (!html5QrCode) {
-        html5QrCode = new Html5Qrcode("qr-reader");
-      }
-      html5QrCode.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 180, height: 180 } },
-        (decodedText) => {
-          document.getElementById("pcIdInput").value = decodedText;
-          stopQrScanner();
-          alert("QRコードからIPアドレスを読み込みました！「接続」ボタンを押してください。");
-        },
-        (errorMessage) => {}
-      ).catch(err => {
-        alert("カメラの起動に失敗しました: " + err);
-      });
-    }
-    function stopQrScanner() {
-      if (html5QrCode) {
-        html5QrCode.stop().then(() => {
-          const readerContainer = document.getElementById("qr-reader");
-          readerContainer.style.display = "none";
-        }).catch(err => {
-          console.error("QRスキャナーの停止に失敗しました:", err);
-        });
-      }
-    }
-  </script>
 
   <!-- メインスクリプト (app.js) -->
   <script src="app.js"></script>
