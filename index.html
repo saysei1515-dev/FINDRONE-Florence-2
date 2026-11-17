@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>YOLO-World リアルタイム探索ファインダー</title>
+  <!-- PeerJS & QRスキャナー用CDN -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -29,6 +32,8 @@
       border-bottom: 1px solid #333;
       box-shadow: 0 4px 12px rgba(0,0,0,0.5);
       z-index: 10;
+      max-height: 45vh;
+      overflow-y: auto;
     }
 
     .input-row {
@@ -164,9 +169,26 @@
 
   <!-- コントロールエリア -->
   <div class="control-panel">
+    <!-- FlaskサーバーIP設定 -->
     <div class="input-row">
-      <input type="text" id="serverIp" placeholder="PCのIPアドレス (例: 192.168.11.x)" />
+      <input type="text" id="serverIp" placeholder="FlaskサーバーIP (例: 192.168.11.x)" />
     </div>
+
+    <!-- PeerJS PC接続・QR読み取りエリア -->
+    <div style="background: #252525; padding: 8px; border-radius: 6px; border: 1px solid #444;">
+      <div class="input-row" style="margin-bottom: 6px;">
+        <input type="text" id="pcIdInput" placeholder="PC側のPeer IDを入力 or QRスキャン" />
+        <button onclick="connectToPC()" style="background: #17a2b8;">接続</button>
+      </div>
+      <div style="display: flex; gap: 6px;">
+        <button onclick="startQrScanner()" style="flex: 1; padding: 6px; background: #28a745; font-size: 12px;">📷 QRスキャン</button>
+        <button onclick="stopQrScanner()" style="flex: 1; padding: 6px; background: #6c757d; font-size: 12px;">⏹️ スキャン停止</button>
+      </div>
+      <div id="qr-reader" style="width: 100%; max-width: 240px; margin: 8px auto; display: none;"></div>
+      <div id="connectionStatus" style="font-size: 11px; color: #aaa; margin-top: 4px;">ステータス: 未接続</div>
+    </div>
+
+    <!-- 検索ワード入力行 -->
     <div class="input-row">
       <!-- 日本語入力可能（サーバー側で自動翻訳されます） -->
       <input type="text" id="targetObject" value="コップ" placeholder="探すもの (例: コップ, ギター)" autocomplete="off" />
@@ -183,7 +205,7 @@
   </div>
 
   <!-- ステータス -->
-  <div class="status-bar" id="status">カメラを起動中...</div>
+  <div class="status-bar" id="status">ステータス: PCと接続してください</div>
 
   <!-- 履歴フォルダボタン -->
   <div class="folder-panel">
@@ -192,8 +214,8 @@
 
   <!-- スタート・ストップボタン -->
   <div class="action-panel">
-    <button id="startButton" onclick="startDetection()">探索スタート</button>
-    <button id="stopButton" onclick="stopDetection()" style="display:none;">探索ストップ</button>
+    <button id="startButton" onclick="startDetection()" disabled>PCと接続してください</button>
+    <button id="stopButton" onclick="stopDetection()" style="display:none;">停止</button>
   </div>
 
   <!-- スクリプト読み込み -->
