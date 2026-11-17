@@ -43,9 +43,17 @@ window.connectToPC = function() {
 
   conn = peer.connect(pcId);
   conn.on('open', () => {
-    status.innerText = "ステータス: PC接続完了 ✅ (探索スタートを押してください)";
+    status.innerText = "ステータス: PC接続完了 ✅ (カメを起動を押してください)";
     status.style.color = "#00ff00";
-    if (startButton) startButton.disabled = false;
+    if (startButton) {
+      startButton.disabled = false;
+      startButton.innerText = "カメラを起動する"; // ← 接続完了後に表示を変更
+    }
+    const connStatus = document.getElementById("connectionStatus");
+    if (connStatus) {
+      connStatus.innerText = "ステータス: 接続完了 ✅";
+      connStatus.style.color = "#28a745";
+    }
   });
   conn.on('error', (err) => {
     console.error("Peer接続エラー:", err);
