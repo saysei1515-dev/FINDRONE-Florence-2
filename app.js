@@ -121,7 +121,7 @@ function beginDetectionLoop() {
   searchTimer = setInterval(async () => {
     if (!isSearching || isRequestInFlight || video.videoWidth === 0) return;
     await sendFrameToPC();
-  }, 1500);
+  }, 500);
 }
 
 async function sendFrameToPC() {
