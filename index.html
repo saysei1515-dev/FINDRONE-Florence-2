@@ -23,7 +23,7 @@
       justify-content: space-between;
     }
 
-    /* ヘッダー・設定エリア */
+    /* コントロールパネル */
     .control-panel {
       background: #1e1e1e;
       padding: 8px 12px;
@@ -74,7 +74,7 @@
       transform: scale(0.96);
     }
 
-    /* 探索スタートボタン（緑色の目立つ大型ボタン） */
+    /* 探索スタート・ストップボタン */
     #startButton {
       background: #28a745;
       font-size: 15px;
@@ -91,7 +91,7 @@
       box-shadow: 0 4px 10px rgba(220, 53, 69, 0.3);
     }
 
-    /* カメラ映像の表示エリア（画面中央・約1/3サイズに固定ではみ出し防止） */
+    /* カメラ映像の表示エリア（画面中央・約1/3サイズ） */
     .viewfinder-container {
       display: flex;
       justify-content: center;
@@ -170,19 +170,26 @@
 </head>
 <body>
 
-  <!-- コントロールパネル（PC接続・ターゲット指定） -->
+  <!-- コントロールパネル -->
   <div class="control-panel">
+    <!-- ① IPアドレス手動入力エリア -->
     <div class="input-row">
       <input type="text" id="pcIdInput" placeholder="PCのIPアドレス (例: 192.168.11.x)" />
       <button onclick="connectToPC()" style="background: #007bff;">接続</button>
     </div>
-    <div class="input-row">
-      <button onclick="startQrScanner()" style="flex: 1; background: #17a2b8; font-size: 12px; padding: 6px;">📷 QRスキャン</button>
-      <button onclick="stopQrScanner()" style="flex: 1; background: #6c757d; font-size: 12px; padding: 6px;">⏹️ スキャン停止</button>
+
+    <!-- ② QRコード読み取り専用エリア（独立） -->
+    <div style="background: #252525; padding: 6px 8px; border-radius: 6px; border: 1px dashed #444; display: flex; flex-direction: column; gap: 4px;">
+      <div style="display: flex; gap: 6px;">
+        <button onclick="startQrScanner()" style="flex: 1; background: #17a2b8; font-size: 12px; padding: 6px;">📷 QRコードでIPを読み取る</button>
+        <button onclick="stopQrScanner()" style="background: #6c757d; font-size: 12px; padding: 6px;">閉じる</button>
+      </div>
+      <div id="qr-reader" style="width: 100%; max-width: 200px; margin: 4px auto; display: none;"></div>
     </div>
-    <div id="qr-reader" style="width: 100%; max-width: 220px; margin: 4px auto; display: none;"></div>
+
     <div id="connectionStatus" style="font-size: 11px; color: #888; text-align: center;">ステータス: 未接続</div>
 
+    <!-- ③ 探すもの入力エリア -->
     <div class="input-row">
       <input type="text" id="targetObject" value="cup" placeholder="探すもの (例: コップ, ギター)" autocomplete="off" />
       <button onclick="updateTarget()" style="background: #007bff;">決定</button>
@@ -228,7 +235,7 @@
         (decodedText) => {
           document.getElementById("pcIdInput").value = decodedText;
           stopQrScanner();
-          alert("PCのIPアドレスを読み込みました！「接続」ボタンを押してください。");
+          alert("QRコードからIPアドレスを読み込みました！「接続」ボタンを押してください。");
         },
         (errorMessage) => {}
       ).catch(err => {
