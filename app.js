@@ -25,27 +25,35 @@ async function startCamera() {
   }
 }
 
-// 無料の翻訳APIを使って日本語を自動で英語に変換する関数
+// 🌐 翻訳API（MyMemory）を使った堅牢な自動翻訳関数
 async function translateToEnglish(text) {
+  // すでに半角英数字のみの場合はそのまま返す
   if (/^[a-zA-Z0-9\s]+$/.test(text)) {
     return text.trim().toLowerCase();
   }
 
   try {
     status.innerText = `🔄 「${text}」を翻訳中...`;
+    
+    // MyMemory翻訳APIへリクエスト
     const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=ja|en`;
     const res = await fetch(url);
     const data = await res.json();
 
     if (data && data.responseData && data.responseData.translatedText) {
       let translated = data.responseData.translatedText.trim().toLowerCase();
-      if (translated && !translated.includes("MYMEMORY WARNING")) {
+      
+      // 警告文やエラーが含まれていないかチェック
+      if (translated && !translated.includes("MYMEMORY WARNING") && !translated.includes("QUERY LENGTH")) {
+        console.log(`翻訳成功: ${text} -> ${translated}`);
         return translated;
       }
     }
   } catch (e) {
-    console.error("翻訳エラー:", e);
+    console.error("翻訳通信エラー:", e);
   }
+
+  // 翻訳に失敗した場合は、そのままの文字を返す
   return text.trim().toLowerCase();
 }
 
@@ -56,10 +64,13 @@ window.updateTarget = function() {
   status.innerText = `🎯 「${inputVal}」の準備中...`;
   status.style.color = "#ffc107";
 
+  // 非同期でAPI翻訳を実行
   translateToEnglish(inputVal).then(englishWord => {
     currentSearchWord = englishWord;
-    status.innerText = `🎯 「${inputVal}」 (${currentSearchWord}) を探します`;
+    status.innerText = `🎯 「${inputVal}」 ➔ 翻訳[${currentSearchWord}] を探します`;
     status.style.color = "#00ff00";
+    
+    // 確認用に入力欄の文字を英語（または変換後の文字）に書き換える
     document.getElementById("targetObject").value = currentSearchWord;
   });
 };
@@ -80,7 +91,7 @@ window.toggleSearch = function() {
     btn.style.background = "#d9534f";
     status.innerText = `🔍 「${currentSearchWord}」を探索中...`;
     
-    // 約0.5秒（500ms）ごとにフレームを送信して高速化
+    // 約0.5秒（500ms）ごとにフレームを送信
     searchTimer = setInterval(async () => {
       if (!isSearching || isRequestInFlight || video.videoWidth === 0) return;
       await sendFrameToPC(ip);
@@ -100,7 +111,7 @@ async function sendFrameToPC(ip) {
 
   try {
     const tempCanvas = document.createElement("canvas");
-    tempCanvas.width = 320; // 解像度を落として通信・処理を軽量化
+    tempCanvas.width = 320; // 軽量化のための幅320px
     tempCanvas.height = Math.round(video.videoHeight * (320 / video.videoWidth));
     const tCtx = tempCanvas.getContext("2d");
     tCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
@@ -143,12 +154,10 @@ function drawDetections(detections) {
     const w = ((xmax - xmin) / 1000) * canvas.width;
     const h = ((ymax - ymin) / 1000) * canvas.height;
 
-    // 緑色の枠を描画
     ctx.strokeStyle = "#00ff00";
     ctx.lineWidth = 4;
     ctx.strokeRect(x, y, w, h);
 
-    // ラベルと信頼度を表示
     ctx.fillStyle = "#00ff00";
     ctx.font = "16px sans-serif";
     ctx.fillText(`${det.label} (${det.confidence})`, x, y > 20 ? y - 5 : y + 20);
