@@ -417,14 +417,14 @@
   <!-- ================= ① HOME タブ ================= -->
   <div id="homeTab" class="tab-content active">
     <div class="app-header">Home</div>
-    
+
     <div class="glass-card" style="padding: 40px 10px; gap: 36px;">
       <div style="font-size: 32px; font-weight: 800; letter-spacing: 5px; color: #5a4b57; font-family: monospace;">FINDRONE</div>
-      
+
       <button class="btn-massive btn-find" onclick="goToTab('search')">
         <i class="bi bi-search"></i> 落とし物を探す
       </button>
-      
+
       <button class="btn-massive btn-settings-link" onclick="goToTab('setting')">
         <i class="bi bi-gear"></i> 設定
       </button>
@@ -434,7 +434,7 @@
   <!-- ================= ② SEARCH タブ ================= -->
   <div id="searchTab" class="tab-content">
     <div class="app-header">search</div>
-    
+
     <div class="glass-card">
       <!-- 検索ワード -->
       <div class="input-wrapper">
@@ -464,7 +464,7 @@
   <!-- ================= ③ SETTING タブ ================= -->
   <div id="settingTab" class="tab-content">
     <div class="app-header">setting</div>
-    
+
     <div class="glass-card">
       <!-- サーバーURL -->
       <div class="input-wrapper">
@@ -526,6 +526,29 @@
     <div class="preview-hint">画面をタップして閉じる</div>
   </div>
 
+  <script>
+    window.goToTab = function (tabName) {
+      document.querySelectorAll(".tab-content").forEach(function (el) {
+        el.classList.remove("active");
+      });
+      document.querySelectorAll(".nav-item").forEach(function (el) {
+        el.classList.remove("active");
+      });
+
+      var tabMap = {
+        home: ["homeTab", "nav-home"],
+        search: ["searchTab", "nav-search"],
+        setting: ["settingTab", "nav-setting"]
+      };
+      var pair = tabMap[tabName];
+      if (pair) {
+        var targetTab = document.getElementById(pair[0]);
+        var targetNav = document.getElementById(pair[1]);
+        if (targetTab) targetTab.classList.add("active");
+        if (targetNav) targetNav.classList.add("active");
+      }
+    };
+  </script>
   <script src="app.js"></script>
 </body>
 </html>
