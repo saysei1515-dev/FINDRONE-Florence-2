@@ -8,6 +8,44 @@ function buildBaseUrl(rawInput) {
   return `http://${cleaned}:5000`;
 }
 
+// QRコードスキャン機能（別PCのIDを読み取る・既存機能を維持）
+window.startQrScanner = async function() {
+  const readerContainer = document.getElementById("qr-reader");
+  if (readerContainer) readerContainer.style.display = "block";
+
+  if (typeof Html5Qrcode === "undefined") {
+    status.innerText = "⚠️ QRスキャナーライブラリが読み込まれていません";
+    status.style.color = "#ff4444";
+    return;
+  }
+
+  try {
+    if (!html5QrCode) {
+      html5QrCode = new Html5Qrcode("qr-reader");
+    } else if (html5QrCode.isScanning) {
+      await html5QrCode.stop();
+    }
+
+    await html5QrCode.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: { width: 200, height: 200 } },
+      (decodedText) => {
+        const pcIdInput = document.getElementById("pcIdInput");
+        if (pcIdInput) pcIdInput.value = decodedText;
+        window.stopQrScanner();
+        alert("PCのIDを読み込みました！「接続」ボタンを押してください。");
+      },
+      () => {}
+    );
+  } catch (err) {
+    console.error("QRカメラ起動エラー:", err);
+    status.innerText = `⚠️ カメラの起動に失敗しました: ${err?.name || err}`;
+    status.style.color = "#ff4444";
+    alert("カメラの起動に失敗しました: " + err);
+  }
+};
+
+
 // ================= 検索ワード翻訳（決定ボタン） =================
 window.updateTarget = async function() {
   const rawServerInput = document.getElementById("serverIp").value.trim();
@@ -59,7 +97,7 @@ window.updateTarget = async function() {
 
   } catch (err) {
     console.error("翻訳リクエストエラー:", err);
-    // 💡 翻訳に失敗しても "cup" に戻さず、入力値をそのまま確定キーワードにする
+    // 💡 翻訳に失敗しても "cup" のままにせず、入力値をそのまま確定キーワードにする
     currentFinalizedKeyword = keyword;
     status.innerText = `⚠️ 翻訳に失敗しました（「${currentFinalizedKeyword}」をそのまま使用します）`;
     status.style.color = "#ff4444";
