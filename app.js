@@ -13,7 +13,7 @@ let isRequestInFlight = false;
 let lastSaveTime = 0;
 let currentFinalizedKeyword = "cup"; // 翻訳・確定された検索キーワード
 
-function setStatus(text, color = "#00ffcc") {
+function setStatus(text, color = "#6c5ce7") {
   if (statusEl) {
     statusEl.innerText = text;
     statusEl.style.color = color;
@@ -80,7 +80,7 @@ if (peer) {
         video.srcObject = remoteStream;
       }
       webcamRunning = true;
-      setStatus(`ステータス: 探索中... (${currentFinalizedKeyword})`, "#00ff00");
+      setStatus(`ステータス: 探索中... (${currentFinalizedKeyword})`, "#247a5d");
     });
   });
 }
@@ -98,11 +98,11 @@ window.connectToPC = function () {
     return;
   }
 
-  setStatus("ステータス: PCに接続中...", "#ffc107");
+  setStatus("ステータス: PCに接続中...", "#b57c18");
 
   conn = peer.connect(pcId);
   conn.on("open", () => {
-    setStatus("ステータス: PC接続完了 ✅", "#00ff00");
+    setStatus("ステータス: PC接続完了 ✅", "#247a5d");
     if (startButton) {
       startButton.disabled = false;
       startButton.innerText = "遠隔カメラ起動 & 探索スタート";
@@ -110,13 +110,13 @@ window.connectToPC = function () {
     const connStatus = document.getElementById("connectionStatus");
     if (connStatus) {
       connStatus.innerText = "ステータス: 接続完了 ✅";
-      connStatus.style.color = "#28a745";
+      connStatus.style.color = "#2e7d63";
     }
   });
 
   conn.on("error", (err) => {
     console.error("Peer接続エラー:", err);
-    setStatus("エラー: PCとの接続に失敗しました", "#ff4444");
+    setStatus("エラー: PCとの接続に失敗しました", "#c94a63");
   });
 };
 
@@ -129,13 +129,13 @@ window.startQrScanner = async function () {
   }
 
   if (typeof Html5Qrcode === "undefined") {
-    setStatus("⚠️ QRライブラリ(Html5Qrcode)が読み込まれていません", "#ff4444");
+    setStatus("⚠️ QRライブラリ(Html5Qrcode)が読み込まれていません", "#c94a63");
     alert("QRスキャナーライブラリの読み込みに失敗しました。通信環境や再読み込みを確認してください。");
     return;
   }
 
   readerContainer.style.display = "block";
-  setStatus("📷 QRスキャナーを起動中...", "#ffc107");
+  setStatus("📷 QRスキャナーを起動中...", "#b57c18");
 
   try {
     if (!html5QrCode) {
@@ -146,19 +146,19 @@ window.startQrScanner = async function () {
 
     await html5QrCode.start(
       { facingMode: "environment" },
-      { fps: 10, qrbox: { width: 180, height: 180 } },
+      { fps: 10, qrbox: { width: 170, height: 170 }, aspectRatio: 1.0 },
       (decodedText) => {
         const pcIdInput = document.getElementById("pcIdInput");
         if (pcIdInput) pcIdInput.value = decodedText.trim();
         window.stopQrScanner();
-        setStatus("✅ PCのIDを読み込みました！「接続」を押してください", "#00ff00");
+        setStatus("✅ PCのIDを読み込みました！「接続」を押してください", "#247a5d");
         alert("PCのIDを読み込みました！「接続」ボタンを押してください。");
       },
       () => {}
     );
   } catch (err) {
     console.error("QRカメラ起動エラー:", err);
-    setStatus(`⚠️ カメラの起動に失敗しました: ${err?.name || err}`, "#ff4444");
+    setStatus(`⚠️ カメラの起動に失敗しました: ${err?.name || err}`, "#c94a63");
     alert("カメラの起動に失敗しました: " + err);
   }
 };
@@ -199,7 +199,7 @@ window.updateTarget = async function () {
 
   saveServerUrl(rawServerInput);
   const baseUrl = buildBaseUrl(rawServerInput);
-  setStatus("🔄 サーバーで翻訳中...", "#ffc107");
+  setStatus("🔄 サーバーで翻訳中...", "#b57c18");
 
   try {
     const response = await fetch(`${baseUrl}/translate`, {
@@ -222,14 +222,14 @@ window.updateTarget = async function () {
     currentFinalizedKeyword = translatedWord;
 
     if (isSearching) {
-      setStatus(`🔍 「${currentFinalizedKeyword}」を探索中... (変更適用)`, "#00ff00");
+      setStatus(`🔍 「${currentFinalizedKeyword}」を探索中... (変更適用)`, "#247a5d");
     } else {
-      setStatus(`🎯 「${keyword}」➔ 英語: [${currentFinalizedKeyword}] に設定しました`, "#00ff00");
+      setStatus(`🎯 「${keyword}」➔ 英語: [${currentFinalizedKeyword}] に設定しました`, "#247a5d");
     }
   } catch (err) {
     console.error("翻訳リクエストエラー:", err);
     currentFinalizedKeyword = keyword;
-    setStatus(`⚠️ 翻訳に失敗しました（「${currentFinalizedKeyword}」をそのまま使用します）`, "#ff4444");
+    setStatus(`⚠️ 翻訳に失敗しました（「${currentFinalizedKeyword}」をそのまま使用します）`, "#c94a63");
   }
 };
 
@@ -267,7 +267,7 @@ window.startDetection = async function () {
   isSearching = true;
   if (startButton) startButton.style.display = "none";
   if (stopButton) stopButton.style.display = "block";
-  setStatus(`🔍 「${currentFinalizedKeyword}」をYOLO-Worldで探索中...`, "#00ff00");
+  setStatus(`🔍 「${currentFinalizedKeyword}」をYOLO-Worldで探索中...`, "#247a5d");
 
   searchTimer = setInterval(async () => {
     if (!isSearching || isRequestInFlight || !video || video.videoWidth === 0) return;
@@ -295,7 +295,7 @@ window.stopDetection = function () {
 
   if (stopButton) stopButton.style.display = "none";
   if (startButton) startButton.style.display = "block";
-  setStatus("ステータス: 停止しました", "#aaa");
+  setStatus("ステータス: 停止しました", "#8c7388");
 };
 
 // ================= サーバーへ画像送信 ＆ 検出 =================
@@ -347,46 +347,70 @@ async function sendFrameToPC(serverInput, keyword) {
   }
 }
 
-// ================= 検出枠の描画 ＆ 履歴保存 =================
+// ================= 検出枠の描画（object-fit: cover 補正） ＆ 履歴保存 =================
 function drawDetections(detections) {
   if (!canvas || !ctx || !video) return;
+  if (!video.videoWidth || !video.videoHeight) return;
 
-  if (video.videoWidth > 0 && video.videoHeight > 0) {
-    canvas.width = video.clientWidth;
-    canvas.height = video.clientHeight;
-  }
+  const viewWidth = video.clientWidth || canvas.clientWidth;
+  const viewHeight = video.clientHeight || canvas.clientHeight;
+  if (!viewWidth || !viewHeight) return;
+
+  canvas.width = viewWidth;
+  canvas.height = viewHeight;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  if (!detections || detections.length === 0 || !video.videoWidth || !video.videoHeight) return;
+  if (!detections || detections.length === 0) return;
 
-  const scaleX = canvas.width / video.videoWidth;
-  const scaleY = canvas.height / video.videoHeight;
+  // object-fit: cover に合わせて画面上に描画されている映像領域とオフセットを算出
+  const videoRatio = video.videoWidth / video.videoHeight;
+  const viewRatio = viewWidth / viewHeight;
+
+  let renderWidth, renderHeight, offsetX, offsetY;
+  if (viewRatio > videoRatio) {
+    renderWidth = viewWidth;
+    renderHeight = viewWidth / videoRatio;
+    offsetX = 0;
+    offsetY = (viewHeight - renderHeight) / 2;
+  } else {
+    renderHeight = viewHeight;
+    renderWidth = viewHeight * videoRatio;
+    offsetX = (viewWidth - renderWidth) / 2;
+    offsetY = 0;
+  }
 
   detections.forEach((det) => {
     const [ymin, xmin, ymax, xmax] = det.box_2d;
-    const x = (xmin / 1000) * video.videoWidth * scaleX;
-    const y = (ymin / 1000) * video.videoHeight * scaleY;
-    const w = ((xmax - xmin) / 1000) * video.videoWidth * scaleX;
-    const h = ((ymax - ymin) / 1000) * video.videoHeight * scaleY;
 
-    ctx.strokeStyle = "#00ff00";
-    ctx.lineWidth = 4;
+    const x = offsetX + (xmin / 1000) * renderWidth;
+    const y = offsetY + (ymin / 1000) * renderHeight;
+    const w = ((xmax - xmin) / 1000) * renderWidth;
+    const h = ((ymax - ymin) / 1000) * renderHeight;
+
+    ctx.strokeStyle = "#00e676";
+    ctx.lineWidth = 3.5;
     ctx.strokeRect(x, y, w, h);
 
-    ctx.fillStyle = "rgba(0, 255, 0, 0.7)";
-    ctx.fillRect(x, y > 25 ? y - 25 : 0, w, 25);
+    const labelText = `${det.label} (${det.confidence})`;
+    ctx.font = "bold 13px sans-serif";
+    const textWidth = ctx.measureText(labelText).width;
+    const badgeW = Math.max(w, textWidth + 12);
+    const badgeH = 22;
+    const badgeY = y > badgeH + 2 ? y - badgeH - 2 : y + 2;
 
-    ctx.fillStyle = "#000";
-    ctx.font = "bold 14px sans-serif";
-    ctx.fillText(`${det.label} (${det.confidence})`, x + 5, y > 25 ? y - 7 : 18);
+    ctx.fillStyle = "rgba(181, 242, 214, 0.92)";
+    ctx.fillRect(x, badgeY, badgeW, badgeH);
+
+    ctx.fillStyle = "#1f4d3d";
+    ctx.fillText(labelText, x + 6, badgeY + 15);
 
     const now = Date.now();
     if (now - lastSaveTime > 3000) {
       saveFoundImage({
-        x: x / scaleX,
-        y: y / scaleY,
-        width: w / scaleX,
-        height: h / scaleY,
+        x: (xmin / 1000) * video.videoWidth,
+        y: (ymin / 1000) * video.videoHeight,
+        width: ((xmax - xmin) / 1000) * video.videoWidth,
+        height: ((ymax - ymin) / 1000) * video.videoHeight,
       });
       lastSaveTime = now;
     }
@@ -416,7 +440,7 @@ function addGalleryThumbnail(dataUrl) {
   const img = document.createElement("img");
   img.src = dataUrl;
   img.style.cssText =
-    "width: 100px; height: 100px; object-fit: cover; border-radius: 6px; border: 2px solid #00ff00; cursor: pointer; flex-shrink: 0;";
+    "width: 100px; height: 100px; object-fit: cover; border-radius: 14px; border: 2.5px solid #9ce8d8; cursor: pointer; flex-shrink: 0;";
   img.onclick = () => {
     const modal = document.getElementById("imagePreviewModal");
     const previewImg = document.getElementById("previewImage");
@@ -437,19 +461,24 @@ function saveFoundImage(bbox) {
   if (!video || !video.videoWidth || !video.videoHeight || bbox.width <= 0 || bbox.height <= 0) {
     return;
   }
+  const sx = Math.max(0, Math.min(video.videoWidth, bbox.x));
+  const sy = Math.max(0, Math.min(video.videoHeight, bbox.y));
+  const sw = Math.max(1, Math.min(video.videoWidth - sx, bbox.width));
+  const sh = Math.max(1, Math.min(video.videoHeight - sy, bbox.height));
+
   const tempCanvas = document.createElement("canvas");
-  tempCanvas.width = bbox.width;
-  tempCanvas.height = bbox.height;
+  tempCanvas.width = sw;
+  tempCanvas.height = sh;
   tempCanvas.getContext("2d").drawImage(
     video,
-    bbox.x,
-    bbox.y,
-    bbox.width,
-    bbox.height,
+    sx,
+    sy,
+    sw,
+    sh,
     0,
     0,
-    bbox.width,
-    bbox.height
+    sw,
+    sh
   );
   addGalleryThumbnail(tempCanvas.toDataURL("image/jpeg"));
 }
