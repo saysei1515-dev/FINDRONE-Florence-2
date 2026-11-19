@@ -112,7 +112,7 @@ window.saveAllSettings = function () {
     if (rawId) {
       window.connectToPC();
     }
-    alert("設定を保存しました！次回からも自動接続されます 💖");
+    alert("設定を保存しました！次回からも自動接続されます");
   } catch (err) {
     console.warn("保存に失敗:", err);
     alert("保存中にエラーが発生しました。");
