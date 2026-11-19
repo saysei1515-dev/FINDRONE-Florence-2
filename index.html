@@ -344,12 +344,16 @@
       justify-content: space-between;
       align-items: center;
       border-bottom: 1.5px solid #ffd4e4;
+      gap: 6px;
     }
 
     .modal-header h3 {
       margin: 0;
-      font-size: 15px;
+      font-size: 14px;
       color: #7c4c64;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .btn-clear {
@@ -366,14 +370,112 @@
       font-size: 11px;
     }
 
+    .btn-back-folder {
+      padding: 6px 12px;
+      background: linear-gradient(135deg, #dff7ee 0%, #bcebe0 100%);
+      color: #20574a;
+      font-size: 11px;
+    }
+
     #imageGallery {
       flex: 1;
       padding: 14px;
       overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .folder-list-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(125px, 1fr));
+      gap: 12px;
+      align-content: start;
+    }
+
+    .folder-card {
+      position: relative;
+      background: #fff6fa;
+      border: 2px solid #ffd5e5;
+      border-radius: 18px;
+      padding: 10px 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(214, 166, 194, 0.15);
+    }
+
+    .folder-thumb {
+      width: 72px;
+      height: 72px;
+      object-fit: cover;
+      border-radius: 12px;
+      border: 2px solid #ffffff;
+      background: #f4eeff;
+    }
+
+    .folder-name {
+      font-size: 12px;
+      font-weight: 700;
+      color: #5c475a;
+      text-align: center;
+      word-break: break-all;
+    }
+
+    .folder-count {
+      font-size: 10px;
+      color: #92758e;
+    }
+
+    .photo-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
       gap: 10px;
       align-content: start;
+    }
+
+    .photo-item {
+      position: relative;
+      width: 92px;
+      height: 92px;
+      flex-shrink: 0;
+    }
+
+    .photo-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 14px;
+      border: 2.5px solid #a8ebd9;
+      cursor: pointer;
+      display: block;
+    }
+
+    /* 隅につける ❌ 削除ボタン */
+    .corner-delete-btn {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      border-radius: 9999px;
+      border: 2px solid #ffffff;
+      background: #ff7b93;
+      color: #ffffff;
+      font-size: 11px;
+      line-height: 1;
+      box-shadow: 0 2px 6px rgba(180, 60, 85, 0.35);
+      z-index: 2;
+    }
+
+    .empty-history-msg {
+      text-align: center;
+      color: #9e879b;
+      font-size: 13px;
+      margin-top: 28px;
     }
 
     /* プレビューモーダル */
@@ -436,9 +538,9 @@
     <div class="app-header">search</div>
 
     <div class="glass-card">
-      <!-- 検索ワード -->
+      <!-- 検索ワード（初期値は空欄） -->
       <div class="input-wrapper">
-        <input type="text" id="targetObject" value="コップ" placeholder="探す物体を入力してください" autocomplete="off" />
+        <input type="text" id="targetObject" value="" placeholder="探す物体を入力してください" autocomplete="off" />
         <button class="btn-decision" onclick="updateTarget()">決定</button>
       </div>
 
@@ -510,8 +612,9 @@
   <div id="historyFolderModal" class="modal-overlay">
     <div class="modal-card">
       <div class="modal-header">
-        <h3>📂 発見した物体一覧</h3>
+        <h3 id="historyModalTitle">📂 発見した物体一覧</h3>
         <div style="display: flex; gap: 6px;">
+          <button id="backToFoldersBtn" class="btn-back-folder" onclick="backToFolderList()" style="display: none;">← 一覧</button>
           <button class="btn-clear" onclick="clearGallery()">履歴クリア</button>
           <button class="btn-close" onclick="closeHistoryFolder()">✕ 閉じる</button>
         </div>
@@ -526,29 +629,6 @@
     <div class="preview-hint">画面をタップして閉じる</div>
   </div>
 
-  <script>
-    window.goToTab = function (tabName) {
-      document.querySelectorAll(".tab-content").forEach(function (el) {
-        el.classList.remove("active");
-      });
-      document.querySelectorAll(".nav-item").forEach(function (el) {
-        el.classList.remove("active");
-      });
-
-      var tabMap = {
-        home: ["homeTab", "nav-home"],
-        search: ["searchTab", "nav-search"],
-        setting: ["settingTab", "nav-setting"]
-      };
-      var pair = tabMap[tabName];
-      if (pair) {
-        var targetTab = document.getElementById(pair[0]);
-        var targetNav = document.getElementById(pair[1]);
-        if (targetTab) targetTab.classList.add("active");
-        if (targetNav) targetNav.classList.add("active");
-      }
-    };
-  </script>
   <script src="app.js"></script>
 </body>
 </html>
