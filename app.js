@@ -1,15 +1,24 @@
 const video = document.getElementById("video");
 const canvas = document.getElementById("outputCanvas");
-const ctx = canvas.getContext("2d");
-const status = document.getElementById("status");
+const ctx = canvas ? canvas.getContext("2d") : null;
+const statusEl = document.getElementById("status");
 const startButton = document.getElementById("startButton");
 const stopButton = document.getElementById("stopButton");
+
+const SERVER_URL_STORAGE_KEY = "findrone_colab_server_url";
 
 let isSearching = false;
 let searchTimer = null;
 let isRequestInFlight = false;
 let lastSaveTime = 0;
 let currentFinalizedKeyword = "cup"; // 翻訳・確定された検索キーワード
+
+function setStatus(text, color = "#00ffcc") {
+  if (statusEl) {
+    statusEl.innerText = text;
+    statusEl.style.color = color;
+  }
+}
 
 // 入力されたIPまたはngrok URLをベースURLに整える
 function buildBaseUrl(rawInput) {
@@ -21,27 +30,60 @@ function buildBaseUrl(rawInput) {
   return `http://${cleaned}:5000`;
 }
 
+// 保存済みサーバーURLの読み込みと自動保存の設定
+function initSavedServerUrl() {
+  const serverIpInput = document.getElementById("serverIp");
+  if (!serverIpInput) return;
+
+  try {
+    const savedUrl = localStorage.getItem(SERVER_URL_STORAGE_KEY);
+    if (savedUrl && !serverIpInput.value.trim()) {
+      serverIpInput.value = savedUrl;
+    }
+  } catch (err) {
+    console.warn("保存済みURLの読み込みに失敗:", err);
+  }
+
+  serverIpInput.addEventListener("change", () => {
+    saveServerUrl(serverIpInput.value);
+  });
+}
+
+function saveServerUrl(rawInput) {
+  const cleaned = (rawInput || "").trim();
+  try {
+    if (cleaned) {
+      localStorage.setItem(SERVER_URL_STORAGE_KEY, cleaned);
+    }
+  } catch (err) {
+    console.warn("URLの保存に失敗:", err);
+  }
+}
+
+initSavedServerUrl();
+
 // ================= PeerJS ＆ 遠隔カメラ接続管理 =================
-const peer = new Peer();
+const peer = typeof Peer !== "undefined" ? new Peer() : null;
 let conn = null;
 let webcamRunning = false;
 let html5QrCode = null;
 
-peer.on("open", (id) => {
-  console.log("スマホ側 Peer ID:", id);
-});
-
-peer.on("call", (call) => {
-  call.answer();
-  call.on("stream", (remoteStream) => {
-    video.srcObject = remoteStream;
-    webcamRunning = true;
-    if (status) {
-      status.innerText = `ステータス: 探索中... (${currentFinalizedKeyword})`;
-      status.style.color = "#00ff00";
-    }
+if (peer) {
+  peer.on("open", (id) => {
+    console.log("スマホ側 Peer ID:", id);
   });
-});
+
+  peer.on("call", (call) => {
+    call.answer();
+    call.on("stream", (remoteStream) => {
+      if (video) {
+        video.srcObject = remoteStream;
+      }
+      webcamRunning = true;
+      setStatus(`ステータス: 探索中... (${currentFinalizedKeyword})`, "#00ff00");
+    });
+  });
+}
 
 // PC接続ボタン
 window.connectToPC = function () {
@@ -51,18 +93,16 @@ window.connectToPC = function () {
     alert("PCのIDを入力してください！");
     return;
   }
-
-  if (status) {
-    status.innerText = "ステータス: PCに接続中...";
-    status.style.color = "#ffc107";
+  if (!peer) {
+    alert("PeerJSの読み込みに失敗しました。通信環境を確認してください。");
+    return;
   }
+
+  setStatus("ステータス: PCに接続中...", "#ffc107");
 
   conn = peer.connect(pcId);
   conn.on("open", () => {
-    if (status) {
-      status.innerText = "ステータス: PC接続完了 ✅";
-      status.style.color = "#00ff00";
-    }
+    setStatus("ステータス: PC接続完了 ✅", "#00ff00");
     if (startButton) {
       startButton.disabled = false;
       startButton.innerText = "遠隔カメラ起動 & 探索スタート";
@@ -76,10 +116,7 @@ window.connectToPC = function () {
 
   conn.on("error", (err) => {
     console.error("Peer接続エラー:", err);
-    if (status) {
-      status.innerText = "エラー: PCとの接続に失敗しました";
-      status.style.color = "#ff4444";
-    }
+    setStatus("エラー: PCとの接続に失敗しました", "#ff4444");
   });
 };
 
@@ -92,19 +129,13 @@ window.startQrScanner = async function () {
   }
 
   if (typeof Html5Qrcode === "undefined") {
-    if (status) {
-      status.innerText = "⚠️ QRスキャナーライブラリが読み込まれていません";
-      status.style.color = "#ff4444";
-    }
-    alert("QRスキャナーライブラリの読み込みに失敗しました。通信環境やページ再読み込みを確認してください。");
+    setStatus("⚠️ QRライブラリ(Html5Qrcode)が読み込まれていません", "#ff4444");
+    alert("QRスキャナーライブラリの読み込みに失敗しました。通信環境や再読み込みを確認してください。");
     return;
   }
 
   readerContainer.style.display = "block";
-  if (status) {
-    status.innerText = "📷 QRスキャナーを起動中...";
-    status.style.color = "#ffc107";
-  }
+  setStatus("📷 QRスキャナーを起動中...", "#ffc107");
 
   try {
     if (!html5QrCode) {
@@ -120,16 +151,14 @@ window.startQrScanner = async function () {
         const pcIdInput = document.getElementById("pcIdInput");
         if (pcIdInput) pcIdInput.value = decodedText.trim();
         window.stopQrScanner();
+        setStatus("✅ PCのIDを読み込みました！「接続」を押してください", "#00ff00");
         alert("PCのIDを読み込みました！「接続」ボタンを押してください。");
       },
       () => {}
     );
   } catch (err) {
     console.error("QRカメラ起動エラー:", err);
-    if (status) {
-      status.innerText = `⚠️ カメラの起動に失敗しました: ${err?.name || err}`;
-      status.style.color = "#ff4444";
-    }
+    setStatus(`⚠️ カメラの起動に失敗しました: ${err?.name || err}`, "#ff4444");
     alert("カメラの起動に失敗しました: " + err);
   }
 };
@@ -168,11 +197,9 @@ window.updateTarget = async function () {
     return;
   }
 
+  saveServerUrl(rawServerInput);
   const baseUrl = buildBaseUrl(rawServerInput);
-  if (status) {
-    status.innerText = "🔄 サーバーで翻訳中...";
-    status.style.color = "#ffc107";
-  }
+  setStatus("🔄 サーバーで翻訳中...", "#ffc107");
 
   try {
     const response = await fetch(`${baseUrl}/translate`, {
@@ -194,22 +221,15 @@ window.updateTarget = async function () {
     if (inputElement) inputElement.value = translatedWord;
     currentFinalizedKeyword = translatedWord;
 
-    if (status) {
-      status.innerText = `🎯 「${keyword}」➔ 英語: [${currentFinalizedKeyword}] に設定しました`;
-      status.style.color = "#00ff00";
-    }
-
-    if (isSearching && status) {
-      status.innerText = `🔍 「${currentFinalizedKeyword}」を探索中... (変更適用)`;
-      status.style.color = "#00ff00";
+    if (isSearching) {
+      setStatus(`🔍 「${currentFinalizedKeyword}」を探索中... (変更適用)`, "#00ff00");
+    } else {
+      setStatus(`🎯 「${keyword}」➔ 英語: [${currentFinalizedKeyword}] に設定しました`, "#00ff00");
     }
   } catch (err) {
     console.error("翻訳リクエストエラー:", err);
     currentFinalizedKeyword = keyword;
-    if (status) {
-      status.innerText = `⚠️ 翻訳に失敗しました（「${currentFinalizedKeyword}」をそのまま使用します）`;
-      status.style.color = "#ff4444";
-    }
+    setStatus(`⚠️ 翻訳に失敗しました（「${currentFinalizedKeyword}」をそのまま使用します）`, "#ff4444");
   }
 };
 
@@ -235,24 +255,22 @@ window.startDetection = async function () {
     return;
   }
 
+  saveServerUrl(rawServerInput);
   await window.updateTarget();
 
   conn.send({
     action: "start",
     keyword: currentFinalizedKeyword,
-    smartphoneId: peer.id,
+    smartphoneId: peer ? peer.id : "",
   });
 
   isSearching = true;
   if (startButton) startButton.style.display = "none";
   if (stopButton) stopButton.style.display = "block";
-  if (status) {
-    status.innerText = `🔍 「${currentFinalizedKeyword}」をYOLO-Worldで探索中...`;
-    status.style.color = "#00ff00";
-  }
+  setStatus(`🔍 「${currentFinalizedKeyword}」をYOLO-Worldで探索中...`, "#00ff00");
 
   searchTimer = setInterval(async () => {
-    if (!isSearching || isRequestInFlight || video.videoWidth === 0) return;
+    if (!isSearching || isRequestInFlight || !video || video.videoWidth === 0) return;
     const currentServerInput = serverIpInput ? serverIpInput.value.trim() : "";
     await sendFrameToPC(currentServerInput, currentFinalizedKeyword);
   }, 500);
@@ -267,18 +285,17 @@ window.stopDetection = function () {
   }
 
   webcamRunning = false;
-  if (video.srcObject) {
+  if (video && video.srcObject) {
     video.srcObject.getTracks().forEach((t) => t.stop());
     video.srcObject = null;
   }
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (ctx && canvas) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
 
   if (stopButton) stopButton.style.display = "none";
   if (startButton) startButton.style.display = "block";
-  if (status) {
-    status.innerText = "ステータス: 停止しました";
-    status.style.color = "#aaa";
-  }
+  setStatus("ステータス: 停止しました", "#aaa");
 };
 
 // ================= サーバーへ画像送信 ＆ 検出 =================
@@ -286,7 +303,7 @@ async function sendFrameToPC(serverInput, keyword) {
   isRequestInFlight = true;
   try {
     const baseUrl = buildBaseUrl(serverInput);
-    if (!baseUrl) {
+    if (!baseUrl || !video || !video.videoWidth || !video.videoHeight) {
       isRequestInFlight = false;
       return;
     }
@@ -332,13 +349,15 @@ async function sendFrameToPC(serverInput, keyword) {
 
 // ================= 検出枠の描画 ＆ 履歴保存 =================
 function drawDetections(detections) {
+  if (!canvas || !ctx || !video) return;
+
   if (video.videoWidth > 0 && video.videoHeight > 0) {
     canvas.width = video.clientWidth;
     canvas.height = video.clientHeight;
   }
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  if (!detections || detections.length === 0) return;
+  if (!detections || detections.length === 0 || !video.videoWidth || !video.videoHeight) return;
 
   const scaleX = canvas.width / video.videoWidth;
   const scaleY = canvas.height / video.videoHeight;
@@ -415,7 +434,7 @@ window.closePreview = function () {
 };
 
 function saveFoundImage(bbox) {
-  if (!video.videoWidth || !video.videoHeight || bbox.width <= 0 || bbox.height <= 0) {
+  if (!video || !video.videoWidth || !video.videoHeight || bbox.width <= 0 || bbox.height <= 0) {
     return;
   }
   const tempCanvas = document.createElement("canvas");
