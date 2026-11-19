@@ -13,8 +13,12 @@ let isSearching = false;
 let searchTimer = null;
 let isRequestInFlight = false;
 let lastSaveTime = 0;
-let currentFinalizedKeyword = "cup";
+let currentFinalizedKeyword = "";
 let hasAutoConnected = false;
+
+// 物体名ごとの履歴データ: { [labelName]: [ { id, dataUrl }, ... ] }
+let historyByObject = {};
+let selectedObjectFolder = null;
 
 function setStatus(text, color = "#a2759e") {
   if (statusEl) {
@@ -345,7 +349,7 @@ window.startDetection = async function () {
       goToTab("setting");
       return;
     }
-    if (!inputVal) {
+    if (!inputVal && !currentFinalizedKeyword) {
       alert("探すものを入力してください！");
       if (inputElement) inputElement.focus();
       return;
@@ -356,7 +360,9 @@ window.startDetection = async function () {
       return;
     }
 
-    await window.updateTarget();
+    if (inputVal) {
+      await window.updateTarget();
+    }
 
     conn.send({
       action: "start",
@@ -502,50 +508,192 @@ function drawDetections(detections) {
 
     const now = Date.now();
     if (now - lastSaveTime > 3000) {
-      saveFoundImage({
-        x: (xmin / 1000) * video.videoWidth,
-        y: (ymin / 1000) * video.videoHeight,
-        width: ((xmax - xmin) / 1000) * video.videoWidth,
-        height: ((ymax - ymin) / 1000) * video.videoHeight,
-      });
+      const objectName = (det.label || currentFinalizedKeyword || "未分類").trim();
+      saveFoundImage(
+        {
+          x: (xmin / 1000) * video.videoWidth,
+          y: (ymin / 1000) * video.videoHeight,
+          width: ((xmax - xmin) / 1000) * video.videoWidth,
+          height: ((ymax - ymin) / 1000) * video.videoHeight,
+        },
+        objectName
+      );
       lastSaveTime = now;
     }
   });
 }
 
 // ================= 発見履歴・フォルダ機能 =================
+function renderHistoryModal() {
+  const gallery = document.getElementById("imageGallery");
+  const titleEl = document.getElementById("historyModalTitle");
+  const backBtn = document.getElementById("backToFoldersBtn");
+  if (!gallery) return;
+
+  gallery.innerHTML = "";
+
+  // 特定の物体フォルダを開いている場合
+  if (selectedObjectFolder) {
+    if (titleEl) titleEl.innerText = `📁 ${selectedObjectFolder}`;
+    if (backBtn) backBtn.style.display = "inline-flex";
+
+    const photos = historyByObject[selectedObjectFolder] || [];
+    if (photos.length === 0) {
+      gallery.innerHTML = `<div class="empty-history-msg">この物体の写真はありません</div>`;
+      return;
+    }
+
+    const grid = document.createElement("div");
+    grid.className = "photo-grid";
+
+    photos.forEach((photo) => {
+      const item = document.createElement("div");
+      item.className = "photo-item";
+
+      const img = document.createElement("img");
+      img.src = photo.dataUrl;
+      img.onclick = () => {
+        const modal = document.getElementById("imagePreviewModal");
+        const previewImg = document.getElementById("previewImage");
+        if (modal && previewImg) {
+          previewImg.src = photo.dataUrl;
+          modal.style.display = "flex";
+        }
+      };
+
+      const delBtn = document.createElement("button");
+      delBtn.className = "corner-delete-btn";
+      delBtn.innerText = "✕";
+      delBtn.title = "この写真を削除";
+      delBtn.onclick = (e) => {
+        e.stopPropagation();
+        deleteSinglePhoto(selectedObjectFolder, photo.id);
+      };
+
+      item.appendChild(img);
+      item.appendChild(delBtn);
+      grid.appendChild(item);
+    });
+
+    gallery.appendChild(grid);
+    return;
+  }
+
+  // 物体名一覧（フォルダ一覧）を表示
+  if (titleEl) titleEl.innerText = "📂 発見した物体一覧";
+  if (backBtn) backBtn.style.display = "none";
+
+  const objectNames = Object.keys(historyByObject).filter(
+    (name) => Array.isArray(historyByObject[name]) && historyByObject[name].length > 0
+  );
+
+  if (objectNames.length === 0) {
+    gallery.innerHTML = `<div class="empty-history-msg">まだ発見した物体の履歴はありません</div>`;
+    return;
+  }
+
+  const folderGrid = document.createElement("div");
+  folderGrid.className = "folder-list-grid";
+
+  objectNames.forEach((objName) => {
+    const photos = historyByObject[objName];
+    const latestPhoto = photos[0];
+
+    const card = document.createElement("div");
+    card.className = "folder-card";
+    card.onclick = () => {
+      selectedObjectFolder = objName;
+      renderHistoryModal();
+    };
+
+    const delFolderBtn = document.createElement("button");
+    delFolderBtn.className = "corner-delete-btn";
+    delFolderBtn.innerText = "✕";
+    delFolderBtn.title = `${objName} の写真をすべて削除`;
+    delFolderBtn.onclick = (e) => {
+      e.stopPropagation();
+      deleteObjectFolder(objName);
+    };
+
+    const thumb = document.createElement("img");
+    thumb.className = "folder-thumb";
+    thumb.src = latestPhoto.dataUrl;
+
+    const nameLabel = document.createElement("div");
+    nameLabel.className = "folder-name";
+    nameLabel.innerText = objName;
+
+    const countLabel = document.createElement("div");
+    countLabel.className = "folder-count";
+    countLabel.innerText = `${photos.length}枚`;
+
+    card.appendChild(delFolderBtn);
+    card.appendChild(thumb);
+    card.appendChild(nameLabel);
+    card.appendChild(countLabel);
+    folderGrid.appendChild(card);
+  });
+
+  gallery.appendChild(folderGrid);
+}
+
+function deleteSinglePhoto(objName, photoId) {
+  if (!historyByObject[objName]) return;
+  historyByObject[objName] = historyByObject[objName].filter((p) => p.id !== photoId);
+  if (historyByObject[objName].length === 0) {
+    delete historyByObject[objName];
+    selectedObjectFolder = null;
+  }
+  renderHistoryModal();
+}
+
+function deleteObjectFolder(objName) {
+  if (!historyByObject[objName]) return;
+  delete historyByObject[objName];
+  if (selectedObjectFolder === objName) {
+    selectedObjectFolder = null;
+  }
+  renderHistoryModal();
+}
+
+window.backToFolderList = function () {
+  selectedObjectFolder = null;
+  renderHistoryModal();
+};
+
 window.openHistoryFolder = function () {
+  selectedObjectFolder = null;
+  renderHistoryModal();
   const modal = document.getElementById("historyFolderModal");
   if (modal) modal.style.display = "flex";
 };
 
 window.closeHistoryFolder = function () {
+  selectedObjectFolder = null;
   const modal = document.getElementById("historyFolderModal");
   if (modal) modal.style.display = "none";
 };
 
 window.clearGallery = function () {
-  const gallery = document.getElementById("imageGallery");
-  if (gallery) gallery.innerHTML = "";
+  historyByObject = {};
+  selectedObjectFolder = null;
+  renderHistoryModal();
 };
 
-function addGalleryThumbnail(dataUrl) {
-  const gallery = document.getElementById("imageGallery");
-  if (!gallery) return;
+function addGalleryThumbnail(dataUrl, objectName = "未分類") {
+  const key = (objectName || "未分類").trim();
+  if (!historyByObject[key]) {
+    historyByObject[key] = [];
+  }
+  historyByObject[key].unshift({
+    id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    dataUrl: dataUrl,
+  });
 
-  const img = document.createElement("img");
-  img.src = dataUrl;
-  img.style.cssText =
-    "width: 90px; height: 90px; object-fit: cover; border-radius: 14px; border: 2.5px solid #a8ebd9; cursor: pointer; flex-shrink: 0;";
-  img.onclick = () => {
-    const modal = document.getElementById("imagePreviewModal");
-    const previewImg = document.getElementById("previewImage");
-    if (modal && previewImg) {
-      previewImg.src = dataUrl;
-      modal.style.display = "flex";
-    }
-  };
-  gallery.prepend(img);
+  const modal = document.getElementById("historyFolderModal");
+  if (modal && modal.style.display === "flex") {
+    renderHistoryModal();
+  }
 }
 
 window.closePreview = function () {
@@ -553,7 +701,7 @@ window.closePreview = function () {
   if (modal) modal.style.display = "none";
 };
 
-function saveFoundImage(bbox) {
+function saveFoundImage(bbox, objectName = "未分類") {
   if (!video || !video.videoWidth || !video.videoHeight || bbox.width <= 0 || bbox.height <= 0) return;
 
   const sx = Math.max(0, Math.min(video.videoWidth, bbox.x));
@@ -565,7 +713,7 @@ function saveFoundImage(bbox) {
   tempCanvas.width = sw;
   tempCanvas.height = sh;
   tempCanvas.getContext("2d").drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
-  addGalleryThumbnail(tempCanvas.toDataURL("image/jpeg"));
+  addGalleryThumbnail(tempCanvas.toDataURL("image/jpeg"), objectName);
 }
 
 // 保存データ読み込み
