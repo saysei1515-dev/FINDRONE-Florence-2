@@ -104,10 +104,11 @@ window.saveAllSettings = function () {
     localStorage.setItem(SERVER_URL_STORAGE_KEY, rawUrl);
     localStorage.setItem(CAMERA_ID_STORAGE_KEY, rawId);
     localStorage.setItem(AUTO_CONNECT_KEY, "true");
-    alert("設定を保存しました！次回からも自動接続されます 💖");
+    setConnectionStatus("設定を保存しました。接続処理を実行中...", "#2e7d63");
     if (rawId) {
       window.connectToPC();
     }
+    alert("設定を保存しました！次回からも自動接続されます 💖");
   } catch (err) {
     console.warn("保存に失敗:", err);
     alert("保存中にエラーが発生しました。");
@@ -153,6 +154,7 @@ window.connectToServerOnly = function () {
   try {
     localStorage.setItem(SERVER_URL_STORAGE_KEY, url);
   } catch (e) {}
+  setConnectionStatus("サーバーURLを保存しました", "#2e7d63");
   alert("サーバーのアドレスを登録しました");
 };
 
@@ -228,15 +230,16 @@ window.toggleQrScanner = async function () {
         async (decodedText) => {
           const pcIdInput = document.getElementById("pcIdInput");
           if (pcIdInput) pcIdInput.value = decodedText.trim();
-          isScanning = false;
-          if (btn) {
-            btn.innerHTML = `<i class="bi bi-qr-code-scan"></i> QRコードカメラ起動`;
-            btn.classList.remove("active-stop");
-          }
+
           if (html5QrCode && html5QrCode.isScanning) {
             try {
               await html5QrCode.stop();
             } catch (e) {}
+          }
+          isScanning = false;
+          if (btn) {
+            btn.innerHTML = `<i class="bi bi-qr-code-scan"></i> QRコードカメラ起動`;
+            btn.classList.remove("active-stop");
           }
           readerContainer.style.display = "none";
           setStatus("✅ IDを取得しました！設定保存か接続を押してください", "#247a5d");
