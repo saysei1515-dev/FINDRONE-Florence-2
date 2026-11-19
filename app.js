@@ -15,6 +15,7 @@ let isRequestInFlight = false;
 let lastSaveTime = 0;
 let currentFinalizedKeyword = "";
 let hasAutoConnected = false;
+let clearBoxUntil = 0; // 物体切り替え後にバウンディングボックスを消した状態を維持する期限(ms)
 
 // 物体名ごとの履歴データ: { [labelName]: [ { id, dataUrl }, ... ] }
 let historyByObject = {};
@@ -303,7 +304,8 @@ window.updateTarget = async function () {
     return;
   }
 
-  // 探す物体を切り替えた瞬間に、表示中のバウンディングボックスを消去
+  // 探す物体を切り替えた瞬間に枠を消し、約2秒間は再描画を抑えて消えた状態を維持
+  clearBoxUntil = Date.now() + 2000;
   if (ctx && canvas) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   }
@@ -467,6 +469,9 @@ function drawDetections(detections) {
   canvas.width = viewWidth;
   canvas.height = viewHeight;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // 物体切り替え直後の約2秒間はバウンディングボックスを表示しない
+  if (Date.now() < clearBoxUntil) return;
 
   if (!detections || detections.length === 0) return;
 
