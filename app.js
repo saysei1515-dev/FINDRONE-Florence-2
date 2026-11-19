@@ -3,22 +3,41 @@ const canvas = document.getElementById("outputCanvas");
 const ctx = canvas ? canvas.getContext("2d") : null;
 const statusEl = document.getElementById("status");
 const startButton = document.getElementById("startButton");
-const stopButton = document.getElementById("stopButton");
+const stopButton = document.getElementById("stopButton"); // ダミー
 
 const SERVER_URL_STORAGE_KEY = "findrone_colab_server_url";
+const CAMERA_ID_STORAGE_KEY = "findrone_colab_camera_id";
+const AUTO_CONNECT_KEY = "findrone_colab_auto_connect";
 
 let isSearching = false;
 let searchTimer = null;
 let isRequestInFlight = false;
 let lastSaveTime = 0;
-let currentFinalizedKeyword = "cup"; // 翻訳・確定された検索キーワード
+let currentFinalizedKeyword = "cup";
 
-function setStatus(text, color = "#6c5ce7") {
+function setStatus(text, color = "#a2759e") {
   if (statusEl) {
     statusEl.innerText = text;
     statusEl.style.color = color;
   }
 }
+
+// 画面遷移
+window.goToTab = function (tabName) {
+  document.querySelectorAll(".tab-content").forEach(el => el.classList.remove("active"));
+  document.querySelectorAll(".nav-item").forEach(el => el.classList.remove("active"));
+
+  if (tabName === "home") {
+    document.getElementById("homeTab").classList.add("active");
+    document.getElementById("nav-home").classList.add("active");
+  } else if (tabName === "search") {
+    document.getElementById("searchTab").classList.add("active");
+    document.getElementById("nav-search").classList.add("active");
+  } else if (tabName === "setting") {
+    document.getElementById("settingTab").classList.add("active");
+    document.getElementById("nav-setting").classList.add("active");
+  }
+};
 
 // 入力されたIPまたはngrok URLをベースURLに整える
 function buildBaseUrl(rawInput) {
@@ -30,39 +49,51 @@ function buildBaseUrl(rawInput) {
   return `http://${cleaned}:5000`;
 }
 
-// 保存済みサーバーURLの読み込みと自動保存の設定
-function initSavedServerUrl() {
+// 起動時の初期化＆自動接続処理
+function initSavedSettings() {
   const serverIpInput = document.getElementById("serverIp");
-  if (!serverIpInput) return;
+  const pcIdInput = document.getElementById("pcIdInput");
 
   try {
     const savedUrl = localStorage.getItem(SERVER_URL_STORAGE_KEY);
-    if (savedUrl && !serverIpInput.value.trim()) {
-      serverIpInput.value = savedUrl;
+    const savedId = localStorage.getItem(CAMERA_ID_STORAGE_KEY);
+
+    if (savedUrl && serverIpInput) serverIpInput.value = savedUrl;
+    if (savedId && pcIdInput) pcIdInput.value = savedId;
+
+    // 前回の「保存」設定がある場合は起動時に自動接続
+    if (savedId && savedUrl && localStorage.getItem(AUTO_CONNECT_KEY) === "true") {
+      setTimeout(() => {
+        console.log("自動接続を開始します...");
+        window.connectToPC();
+      }, 1000);
     }
   } catch (err) {
-    console.warn("保存済みURLの読み込みに失敗:", err);
+    console.warn("設定の初期化に失敗:", err);
   }
-
-  serverIpInput.addEventListener("change", () => {
-    saveServerUrl(serverIpInput.value);
-  });
 }
 
-function saveServerUrl(rawInput) {
-  const cleaned = (rawInput || "").trim();
+// 「この設定で保存」ボタン
+window.saveAllSettings = function () {
+  const serverIpInput = document.getElementById("serverIp");
+  const pcIdInput = document.getElementById("pcIdInput");
+
+  const rawUrl = serverIpInput ? serverIpInput.value.trim() : "";
+  const rawId = pcIdInput ? pcIdInput.value.trim() : "";
+
   try {
-    if (cleaned) {
-      localStorage.setItem(SERVER_URL_STORAGE_KEY, cleaned);
-    }
+    localStorage.setItem(SERVER_URL_STORAGE_KEY, rawUrl);
+    localStorage.setItem(CAMERA_ID_STORAGE_KEY, rawId);
+    localStorage.setItem(AUTO_CONNECT_KEY, "true");
+    alert("設定を保存しました！次回からも自動接続されます 💖");
+    window.connectToPC(); // そのまま接続処理へ
   } catch (err) {
-    console.warn("URLの保存に失敗:", err);
+    console.warn("保存に失敗:", err);
+    alert("保存中にエラーが発生しました。");
   }
-}
+};
 
-initSavedServerUrl();
-
-// ================= PeerJS ＆ 遠隔カメラ接続管理 =================
+// PeerJS ＆ 遠隔カメラ接続管理
 const peer = typeof Peer !== "undefined" ? new Peer() : null;
 let conn = null;
 let webcamRunning = false;
@@ -85,6 +116,20 @@ if (peer) {
   });
 }
 
+// 単独接続ボタン用
+window.connectToServerOnly = function () {
+  const serverIpInput = document.getElementById("serverIp");
+  const url = serverIpInput ? serverIpInput.value.trim() : "";
+  if (!url) {
+    alert("IPアドレスまたはURLを入力してください！");
+    return;
+  }
+  try {
+    localStorage.setItem(SERVER_URL_STORAGE_KEY, url);
+  } catch (e) {}
+  alert("サーバーのアドレスを登録しました");
+};
+
 // PC接続ボタン
 window.connectToPC = function () {
   const pcIdInput = document.getElementById("pcIdInput");
@@ -94,7 +139,7 @@ window.connectToPC = function () {
     return;
   }
   if (!peer) {
-    alert("PeerJSの読み込みに失敗しました。通信環境を確認してください。");
+    alert("PeerJSの読み込みに失敗しました。");
     return;
   }
 
@@ -105,7 +150,7 @@ window.connectToPC = function () {
     setStatus("ステータス: PC接続完了 ✅", "#247a5d");
     if (startButton) {
       startButton.disabled = false;
-      startButton.innerText = "遠隔カメラ起動 & 探索スタート";
+      startButton.innerText = "探索開始";
     }
     const connStatus = document.getElementById("connectionStatus");
     if (connStatus) {
@@ -117,68 +162,73 @@ window.connectToPC = function () {
   conn.on("error", (err) => {
     console.error("Peer接続エラー:", err);
     setStatus("エラー: PCとの接続に失敗しました", "#c94a63");
+    const connStatus = document.getElementById("connectionStatus");
+    if (connStatus) connStatus.innerText = "ステータス: 接続に失敗しました ✕";
   });
 };
 
-// QRコードスキャン機能（別PCのIDを読み取る）
-window.startQrScanner = async function () {
-  const readerContainer = document.getElementById("qr-reader");
-  if (!readerContainer) {
-    console.error("#qr-reader が見つかりません");
-    return;
-  }
+// QRコードスキャン機能（切り替えトグル式）
+let isScanning = false;
+window.toggleQrScanner = async function () {
+  const btn = document.getElementById("btn-qr");
+  if (!isScanning) {
+    // 起動処理
+    const readerContainer = document.getElementById("qr-reader");
+    if (!readerContainer) return;
 
-  if (typeof Html5Qrcode === "undefined") {
-    setStatus("⚠️ QRライブラリ(Html5Qrcode)が読み込まれていません", "#c94a63");
-    alert("QRスキャナーライブラリの読み込みに失敗しました。通信環境や再読み込みを確認してください。");
-    return;
-  }
-
-  readerContainer.style.display = "block";
-  setStatus("📷 QRスキャナーを起動中...", "#b57c18");
-
-  try {
-    if (!html5QrCode) {
-      html5QrCode = new Html5Qrcode("qr-reader");
-    } else if (html5QrCode.isScanning) {
-      await html5QrCode.stop();
+    if (typeof Html5Qrcode === "undefined") {
+      alert("QRライブラリの読み込みに失敗しました。");
+      return;
     }
 
-    await html5QrCode.start(
-      { facingMode: "environment" },
-      { fps: 10, qrbox: { width: 170, height: 170 }, aspectRatio: 1.0 },
-      (decodedText) => {
-        const pcIdInput = document.getElementById("pcIdInput");
-        if (pcIdInput) pcIdInput.value = decodedText.trim();
-        window.stopQrScanner();
-        setStatus("✅ PCのIDを読み込みました！「接続」を押してください", "#247a5d");
-        alert("PCのIDを読み込みました！「接続」ボタンを押してください。");
-      },
-      () => {}
-    );
-  } catch (err) {
-    console.error("QRカメラ起動エラー:", err);
-    setStatus(`⚠️ カメラの起動に失敗しました: ${err?.name || err}`, "#c94a63");
-    alert("カメラの起動に失敗しました: " + err);
+    readerContainer.style.display = "block";
+    btn.innerHTML = `<i class="bi bi-x-circle-fill"></i> QRスキャン停止`;
+    btn.classList.add("active-stop");
+    isScanning = true;
+
+    try {
+      if (!html5QrCode) {
+        html5QrCode = new Html5Qrcode("qr-reader");
+      } else if (html5QrCode.isScanning) {
+        await html5QrCode.stop();
+      }
+
+      await html5QrCode.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 170, height: 170 }, aspectRatio: 1.0 },
+        (decodedText) => {
+          const pcIdInput = document.getElementById("pcIdInput");
+          if (pcIdInput) pcIdInput.value = decodedText.trim();
+          window.toggleQrScanner(); // 読み込み後自働停止
+          setStatus("✅ IDを取得しました！設定保存か接続を押してください", "#247a5d");
+        },
+        () => {}
+      );
+    } catch (err) {
+      console.error(err);
+      window.toggleQrScanner(); // 失敗時リセット
+    }
+  } else {
+    // 停止処理
+    btn.innerHTML = `<i class="bi bi-qr-code-scan"></i> QRコードカメラ起動`;
+    btn.classList.remove("active-stop");
+    isScanning = false;
+    const readerContainer = document.getElementById("qr-reader");
+    if (html5QrCode && html5QrCode.isScanning) {
+      html5QrCode.stop().then(() => {
+        if (readerContainer) readerContainer.style.display = "none";
+      }).catch(() => {
+        if (readerContainer) readerContainer.style.display = "none";
+      });
+    } else if (readerContainer) {
+      readerContainer.style.display = "none";
+    }
   }
 };
 
-window.stopQrScanner = function () {
-  const readerContainer = document.getElementById("qr-reader");
-  if (html5QrCode && html5QrCode.isScanning) {
-    html5QrCode
-      .stop()
-      .then(() => {
-        if (readerContainer) readerContainer.style.display = "none";
-      })
-      .catch((err) => {
-        console.error("QRスキャナーの停止に失敗しました:", err);
-        if (readerContainer) readerContainer.style.display = "none";
-      });
-  } else if (readerContainer) {
-    readerContainer.style.display = "none";
-  }
-};
+// (既存互換ダミー)
+window.startQrScanner = () => window.toggleQrScanner();
+window.stopQrScanner = () => isScanning && window.toggleQrScanner();
 
 // ================= 検索ワード翻訳（決定ボタン） =================
 window.updateTarget = async function () {
@@ -193,11 +243,11 @@ window.updateTarget = async function () {
   }
   if (!rawServerInput) {
     alert("サーバーのURLまたはIPアドレスを入力してください！");
+    goToTab("setting");
     if (serverIpInput) serverIpInput.focus();
     return;
   }
 
-  saveServerUrl(rawServerInput);
   const baseUrl = buildBaseUrl(rawServerInput);
   setStatus("🔄 サーバーで翻訳中...", "#b57c18");
 
@@ -211,9 +261,7 @@ window.updateTarget = async function () {
       body: JSON.stringify({ keyword: keyword }),
     });
 
-    if (!response.ok) {
-      throw new Error(`翻訳サーバーエラー (HTTP ${response.status})`);
-    }
+    if (!response.ok) throw new Error("翻訳エラー");
 
     const data = await response.json();
     const translatedWord = (data.translated || keyword).trim();
@@ -227,76 +275,76 @@ window.updateTarget = async function () {
       setStatus(`🎯 「${keyword}」➔ 英語: [${currentFinalizedKeyword}] に設定しました`, "#247a5d");
     }
   } catch (err) {
-    console.error("翻訳リクエストエラー:", err);
+    console.error(err);
     currentFinalizedKeyword = keyword;
-    setStatus(`⚠️ 翻訳に失敗しました（「${currentFinalizedKeyword}」をそのまま使用します）`, "#c94a63");
+    setStatus(`⚠️ 翻訳に失敗しました（「${currentFinalizedKeyword}」を使用）`, "#c94a63");
   }
 };
 
-// ================= 探索スタート・ストップ =================
+// ================= 探索スタート・ストップ（トグルカラー化） =================
 window.startDetection = async function () {
-  const serverIpInput = document.getElementById("serverIp");
-  const inputElement = document.getElementById("targetObject");
-  const rawServerInput = serverIpInput ? serverIpInput.value.trim() : "";
-  const inputVal = inputElement ? inputElement.value.trim() : "";
+  if (!isSearching) {
+    // 【探索開始】
+    const serverIpInput = document.getElementById("serverIp");
+    const inputElement = document.getElementById("targetObject");
+    const rawServerInput = serverIpInput ? serverIpInput.value.trim() : "";
+    const inputVal = inputElement ? inputElement.value.trim() : "";
 
-  if (!rawServerInput) {
-    alert("サーバーのURLまたはIPアドレスを入力してください！");
-    if (serverIpInput) serverIpInput.focus();
-    return;
+    if (!rawServerInput) {
+      alert("サーバーのURLを設定画面で入力してください！");
+      goToTab("setting");
+      return;
+    }
+    if (!inputVal) {
+      alert("探すものを入力してください！");
+      if (inputElement) inputElement.focus();
+      return;
+    }
+    if (!conn || !conn.open) {
+      alert("先にPCと接続してください！");
+      goToTab("setting");
+      return;
+    }
+
+    await window.updateTarget();
+
+    conn.send({
+      action: "start",
+      keyword: currentFinalizedKeyword,
+      smartphoneId: peer ? peer.id : "",
+    });
+
+    isSearching = true;
+    startButton.innerText = "探索終了";
+    startButton.classList.add("active-stop");
+    setStatus(`🔍 「${currentFinalizedKeyword}」をYOLO-Worldで探索中...`, "#247a5d");
+
+    searchTimer = setInterval(async () => {
+      if (!isSearching || isRequestInFlight || !video || video.videoWidth === 0) return;
+      await sendFrameToPC(serverIpInput.value.trim(), currentFinalizedKeyword);
+    }, 500);
+  } else {
+    // 【探索終了（トグル反転）】
+    isSearching = false;
+    clearInterval(searchTimer);
+
+    if (conn && conn.open) conn.send({ action: "stop" });
+
+    webcamRunning = false;
+    if (video && video.srcObject) {
+      video.srcObject.getTracks().forEach((t) => t.stop());
+      video.srcObject = null;
+    }
+    if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    startButton.innerText = "探索開始";
+    startButton.classList.remove("active-stop");
+    setStatus("ステータス: 停止しました", "#8c7388");
   }
-  if (!inputVal) {
-    alert("探すものを入力してください！");
-    if (inputElement) inputElement.focus();
-    return;
-  }
-  if (!conn || !conn.open) {
-    alert("先にPCと接続してください！");
-    return;
-  }
-
-  saveServerUrl(rawServerInput);
-  await window.updateTarget();
-
-  conn.send({
-    action: "start",
-    keyword: currentFinalizedKeyword,
-    smartphoneId: peer ? peer.id : "",
-  });
-
-  isSearching = true;
-  if (startButton) startButton.style.display = "none";
-  if (stopButton) stopButton.style.display = "block";
-  setStatus(`🔍 「${currentFinalizedKeyword}」をYOLO-Worldで探索中...`, "#247a5d");
-
-  searchTimer = setInterval(async () => {
-    if (!isSearching || isRequestInFlight || !video || video.videoWidth === 0) return;
-    const currentServerInput = serverIpInput ? serverIpInput.value.trim() : "";
-    await sendFrameToPC(currentServerInput, currentFinalizedKeyword);
-  }, 500);
 };
 
-window.stopDetection = function () {
-  isSearching = false;
-  clearInterval(searchTimer);
-
-  if (conn && conn.open) {
-    conn.send({ action: "stop" });
-  }
-
-  webcamRunning = false;
-  if (video && video.srcObject) {
-    video.srcObject.getTracks().forEach((t) => t.stop());
-    video.srcObject = null;
-  }
-  if (ctx && canvas) {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-  }
-
-  if (stopButton) stopButton.style.display = "none";
-  if (startButton) startButton.style.display = "block";
-  setStatus("ステータス: 停止しました", "#8c7388");
-};
+// 既存ボタン互換ダミー
+window.stopDetection = () => isSearching && window.startDetection();
 
 // ================= サーバーへ画像送信 ＆ 検出 =================
 async function sendFrameToPC(serverInput, keyword) {
@@ -328,20 +376,16 @@ async function sendFrameToPC(serverInput, keyword) {
 
     const response = await fetch(`${baseUrl}/detect`, {
       method: "POST",
-      headers: {
-        "ngrok-skip-browser-warning": "true",
-      },
+      headers: { "ngrok-skip-browser-warning": "true" },
       body: formData,
     });
 
-    if (!response.ok) {
-      throw new Error(`サーバー応答エラー (HTTP ${response.status})`);
-    }
+    if (!response.ok) throw new Error("サーバー応答エラー");
 
     const data = await response.json();
     drawDetections(data.detections);
   } catch (err) {
-    console.error("通信エラー:", err);
+    console.error(err);
   } finally {
     isRequestInFlight = false;
   }
@@ -362,7 +406,6 @@ function drawDetections(detections) {
 
   if (!detections || detections.length === 0) return;
 
-  // object-fit: cover に合わせて画面上に描画されている映像領域とオフセットを算出
   const videoRatio = video.videoWidth / video.videoHeight;
   const viewRatio = viewWidth / viewHeight;
 
@@ -440,7 +483,7 @@ function addGalleryThumbnail(dataUrl) {
   const img = document.createElement("img");
   img.src = dataUrl;
   img.style.cssText =
-    "width: 100px; height: 100px; object-fit: cover; border-radius: 14px; border: 2.5px solid #9ce8d8; cursor: pointer; flex-shrink: 0;";
+    "width: 90px; height: 90px; object-fit: cover; border-radius: 14px; border: 2.5px solid #a8ebd9; cursor: pointer; flex-shrink: 0;";
   img.onclick = () => {
     const modal = document.getElementById("imagePreviewModal");
     const previewImg = document.getElementById("previewImage");
@@ -458,9 +501,8 @@ window.closePreview = function () {
 };
 
 function saveFoundImage(bbox) {
-  if (!video || !video.videoWidth || !video.videoHeight || bbox.width <= 0 || bbox.height <= 0) {
-    return;
-  }
+  if (!video || !video.videoWidth || !video.videoHeight || bbox.width <= 0 || bbox.height <= 0) return;
+  
   const sx = Math.max(0, Math.min(video.videoWidth, bbox.x));
   const sy = Math.max(0, Math.min(video.videoHeight, bbox.y));
   const sw = Math.max(1, Math.min(video.videoWidth - sx, bbox.width));
@@ -469,16 +511,9 @@ function saveFoundImage(bbox) {
   const tempCanvas = document.createElement("canvas");
   tempCanvas.width = sw;
   tempCanvas.height = sh;
-  tempCanvas.getContext("2d").drawImage(
-    video,
-    sx,
-    sy,
-    sw,
-    sh,
-    0,
-    0,
-    sw,
-    sh
-  );
+  tempCanvas.getContext("2d").drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
   addGalleryThumbnail(tempCanvas.toDataURL("image/jpeg"));
 }
+
+// 保存データ読み込み
+initSavedSettings();
