@@ -303,6 +303,11 @@ window.updateTarget = async function () {
     return;
   }
 
+  // 探す物体を切り替えた瞬間に、表示中のバウンディングボックスを消去
+  if (ctx && canvas) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
   const baseUrl = buildBaseUrl(rawServerInput);
   setStatus("🔄 サーバーで翻訳中...", "#b57c18");
 
