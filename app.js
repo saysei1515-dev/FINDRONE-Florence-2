@@ -12,10 +12,11 @@ const AUTO_CONNECT_KEY = "findrone_colab_auto_connect";
 let isSearching = false;
 let searchTimer = null;
 let isRequestInFlight = false;
+let isUpdatingTarget = false; // サーバーへ新しい物体名を送信・反映中のフラグ
+let targetUpdateSafetyTimer = null;
 let lastSaveTime = 0;
 let currentFinalizedKeyword = "";
 let hasAutoConnected = false;
-let clearBoxUntil = 0; // 物体切り替え後にバウンディングボックスを消した状態を維持する期限(ms)
 
 // 物体名ごとの履歴データ: { [labelName]: [ { id, dataUrl }, ... ] }
 let historyByObject = {};
@@ -34,6 +35,33 @@ function setConnectionStatus(text, color = "#8c7388") {
     connStatus.innerText = text;
     connStatus.style.color = color;
   }
+}
+
+function clearBoundingBoxCanvas() {
+  if (ctx && canvas) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
+function beginTargetLoadingState() {
+  isUpdatingTarget = true;
+  clearBoundingBoxCanvas();
+  if (targetUpdateSafetyTimer) {
+    clearTimeout(targetUpdateSafetyTimer);
+  }
+  // 万が一サーバー応答が返らない場合の安全解除（10秒）
+  targetUpdateSafetyTimer = setTimeout(() => {
+    isUpdatingTarget = false;
+  }, 10000);
+}
+
+function endTargetLoadingState() {
+  isUpdatingTarget = false;
+  if (targetUpdateSafetyTimer) {
+    clearTimeout(targetUpdateSafetyTimer);
+    targetUpdateSafetyTimer = null;
+  }
+  clearBoundingBoxCanvas();
 }
 
 // 画面遷移
@@ -304,11 +332,8 @@ window.updateTarget = async function () {
     return;
   }
 
-  // 探す物体を切り替えた瞬間に枠を消し、約2秒間は再描画を抑えて消えた状態を維持
-  clearBoxUntil = Date.now() + 2000;
-  if (ctx && canvas) {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-  }
+  // サーバーが新しい物体名を反映し終えるまで枠消去＆旧キーワード検出を抑止
+  beginTargetLoadingState();
 
   const baseUrl = buildBaseUrl(rawServerInput);
   setStatus("🔄 サーバーで翻訳中...", "#b57c18");
@@ -340,6 +365,8 @@ window.updateTarget = async function () {
     console.error(err);
     currentFinalizedKeyword = keyword;
     setStatus(`⚠️ 翻訳に失敗しました（「${currentFinalizedKeyword}」を使用）`, "#c94a63");
+  } finally {
+    endTargetLoadingState();
   }
 };
 
@@ -385,12 +412,13 @@ window.startDetection = async function () {
     setStatus(`🔍 「${currentFinalizedKeyword}」をYOLO-Worldで探索中...`, "#247a5d");
 
     searchTimer = setInterval(async () => {
-      if (!isSearching || isRequestInFlight || !video || video.videoWidth === 0) return;
+      if (!isSearching || isUpdatingTarget || isRequestInFlight || !video || video.videoWidth === 0) return;
       await sendFrameToPC(serverIpInput ? serverIpInput.value.trim() : "", currentFinalizedKeyword);
     }, 500);
   } else {
     isSearching = false;
     clearInterval(searchTimer);
+    endTargetLoadingState();
 
     if (conn && conn.open) conn.send({ action: "stop" });
 
@@ -399,7 +427,7 @@ window.startDetection = async function () {
       video.srcObject.getTracks().forEach((t) => t.stop());
       video.srcObject = null;
     }
-    if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    clearBoundingBoxCanvas();
 
     if (startButton) {
       startButton.innerText = "探索開始";
@@ -414,11 +442,12 @@ window.stopDetection = () => isSearching && window.startDetection();
 
 // ================= サーバーへ画像送信 ＆ 検出 =================
 async function sendFrameToPC(serverInput, keyword) {
+  if (isUpdatingTarget || !keyword) return;
   isRequestInFlight = true;
+  const requestedKeyword = keyword;
   try {
     const baseUrl = buildBaseUrl(serverInput);
     if (!baseUrl || !video || !video.videoWidth || !video.videoHeight) {
-      isRequestInFlight = false;
       return;
     }
 
@@ -432,13 +461,18 @@ async function sendFrameToPC(serverInput, keyword) {
       tempCanvas.toBlob(resolve, "image/jpeg", 0.6)
     );
     if (!blob) {
-      isRequestInFlight = false;
+      return;
+    }
+
+    // 送信中に物体切り替えが始まった場合は破棄
+    if (isUpdatingTarget || requestedKeyword !== currentFinalizedKeyword) {
+      clearBoundingBoxCanvas();
       return;
     }
 
     const formData = new FormData();
     formData.append("image", blob, "frame.jpg");
-    formData.append("keyword", keyword);
+    formData.append("keyword", requestedKeyword);
 
     const response = await fetch(`${baseUrl}/detect`, {
       method: "POST",
@@ -449,6 +483,13 @@ async function sendFrameToPC(serverInput, keyword) {
     if (!response.ok) throw new Error("サーバー応答エラー");
 
     const data = await response.json();
+
+    // 応答が返った時点で、すでに別の物体に切り替わっていたら古い検出結果は描画・保存しない
+    if (isUpdatingTarget || requestedKeyword !== currentFinalizedKeyword) {
+      clearBoundingBoxCanvas();
+      return;
+    }
+
     drawDetections(data.detections);
   } catch (err) {
     console.error(err);
@@ -470,8 +511,8 @@ function drawDetections(detections) {
   canvas.height = viewHeight;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // 物体切り替え直後の約2秒間はバウンディングボックスを表示しない
-  if (Date.now() < clearBoxUntil) return;
+  // 新しい物体名のサーバー反映中は枠を描画しない
+  if (isUpdatingTarget) return;
 
   if (!detections || detections.length === 0) return;
 
