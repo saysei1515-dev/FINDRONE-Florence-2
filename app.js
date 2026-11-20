@@ -18,6 +18,11 @@ let lastSaveTime = 0;
 let currentFinalizedKeyword = "";
 let hasAutoConnected = false;
 
+// 通知（アプリ内トースト＆Web Audio通知音）用：物体ごとに { hasNotifiedOnce, count } を管理
+let notifyStateByObject = {};
+let toastTimer = null;
+let audioCtx = null;
+
 // 物体名ごとの履歴データ: { [labelName]: [ { id, dataUrl }, ... ] }
 let historyByObject = {};
 let selectedObjectFolder = null;
@@ -41,6 +46,93 @@ function clearBoundingBoxCanvas() {
   if (ctx && canvas) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   }
+}
+
+function resetFoundNotifyState() {
+  notifyStateByObject = {};
+}
+
+function unlockAudioContext() {
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    if (!audioCtx) {
+      audioCtx = new AudioContextClass();
+    }
+    if (audioCtx.state === "suspended") {
+      audioCtx.resume();
+    }
+  } catch (err) {
+    console.warn("AudioContextの初期化に失敗:", err);
+  }
+}
+
+function playFoundSound() {
+  try {
+    unlockAudioContext();
+    if (!audioCtx) return;
+
+    const now = audioCtx.currentTime;
+    const notes = [
+      { freq: 880, start: 0, duration: 0.14 },
+      { freq: 1174.66, start: 0.15, duration: 0.22 },
+    ];
+
+    notes.forEach((n) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(n.freq, now + n.start);
+
+      gain.gain.setValueAtTime(0.001, now + n.start);
+      gain.gain.exponentialRampToValueAtTime(0.18, now + n.start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + n.start + n.duration);
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      osc.start(now + n.start);
+      osc.stop(now + n.start + n.duration + 0.02);
+    });
+  } catch (err) {
+    console.warn("通知音の再生に失敗:", err);
+  }
+}
+
+function showFoundToast(message) {
+  const toastEl = document.getElementById("foundToast");
+  if (!toastEl) return;
+
+  toastEl.innerText = message;
+  toastEl.style.display = "block";
+
+  if (toastTimer) {
+    clearTimeout(toastTimer);
+  }
+  toastTimer = setTimeout(() => {
+    toastEl.style.display = "none";
+  }, 3000);
+}
+
+function notifyObjectFound(objectName, confidence) {
+  const key = (objectName || currentFinalizedKeyword || "未分類").trim();
+  if (!notifyStateByObject[key]) {
+    notifyStateByObject[key] = { hasNotifiedOnce: false, count: 0 };
+  }
+
+  const state = notifyStateByObject[key];
+  if (!state.hasNotifiedOnce) {
+    state.hasNotifiedOnce = true;
+    state.count = 0;
+  } else {
+    state.count += 1;
+    if (state.count < 5) return;
+    state.count = 0;
+  }
+
+  const confText = confidence !== undefined ? ` (${confidence})` : "";
+  showFoundToast(`🎉「${key}」を発見しました！${confText}`);
+  playFoundSound();
 }
 
 function beginTargetLoadingState() {
@@ -316,6 +408,7 @@ window.stopQrScanner = () => isScanning && window.toggleQrScanner();
 
 // ================= 検索ワード翻訳（決定ボタン） =================
 window.updateTarget = async function () {
+  unlockAudioContext();
   const serverIpInput = document.getElementById("serverIp");
   const inputElement = document.getElementById("targetObject");
   const rawServerInput = serverIpInput ? serverIpInput.value.trim() : "";
@@ -372,6 +465,7 @@ window.updateTarget = async function () {
 
 // ================= 探索スタート・ストップ（トグルカラー化） =================
 window.startDetection = async function () {
+  unlockAudioContext();
   if (!isSearching) {
     const serverIpInput = document.getElementById("serverIp");
     const inputElement = document.getElementById("targetObject");
@@ -398,6 +492,8 @@ window.startDetection = async function () {
       await window.updateTarget();
     }
 
+    resetFoundNotifyState();
+
     conn.send({
       action: "start",
       keyword: currentFinalizedKeyword,
@@ -418,6 +514,7 @@ window.startDetection = async function () {
   } else {
     isSearching = false;
     clearInterval(searchTimer);
+    resetFoundNotifyState();
     endTargetLoadingState();
 
     if (conn && conn.open) conn.send({ action: "stop" });
@@ -557,9 +654,11 @@ function drawDetections(detections) {
     ctx.fillStyle = "#1f4d3d";
     ctx.fillText(labelText, x + 6, badgeY + 15);
 
+    const objectName = (det.label || currentFinalizedKeyword || "未分類").trim();
+    notifyObjectFound(objectName, det.confidence);
+
     const now = Date.now();
     if (now - lastSaveTime > 3000) {
-      const objectName = (det.label || currentFinalizedKeyword || "未分類").trim();
       saveFoundImage(
         {
           x: (xmin / 1000) * video.videoWidth,
