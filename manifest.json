@@ -3,7 +3,7 @@
   "short_name": "FINDRONE",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#f7f3ff",
+  "background_color": "#ffffff",
   "theme_color": "#ffdce8",
   "icons": [
     {
