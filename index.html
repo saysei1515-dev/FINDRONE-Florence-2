@@ -82,7 +82,8 @@
       color: #a894a5;
     }
 
-    input[type="text"] {
+    input[type="text"],
+    input[type="email"] {
       flex: 1;
       min-width: 0;
       background: #fffafc;
@@ -96,9 +97,44 @@
       transition: border-color 0.2s, box-shadow 0.2s;
     }
 
-    input[type="text"]:focus {
+    input[type="text"]:focus,
+    input[type="email"]:focus {
       border-color: #f39ac1;
       box-shadow: 0 0 0 4px rgba(243, 154, 193, 0.2);
+    }
+
+    /* 通知設定ブロック */
+    .notify-setting-box {
+      width: 100%;
+      background: #fff8fb;
+      border: 2px solid #f7dce8;
+      border-radius: 20px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .notify-toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #5c475a;
+    }
+
+    .btn-notify-toggle {
+      padding: 7px 16px;
+      font-size: 12px;
+      background: linear-gradient(135deg, #e7e2f0 0%, #d2cbe0 100%);
+      color: #554861;
+    }
+
+    .btn-notify-toggle.is-on {
+      background: linear-gradient(135deg, #aef1e0 0%, #76d3bd 100%);
+      color: #1a4f43;
     }
 
     /* 両サイドを丸くしたボタンたち */
@@ -601,6 +637,18 @@
         <span class="input-icon"><i class="bi bi-camera"></i></span>
         <input type="text" id="pcIdInput" placeholder="カメラのIDを入力してください" />
         <button class="btn-connect" onclick="connectToPC()">接続</button>
+      </div>
+
+      <!-- 通知設定（ON/OFF ＋ ON時のみGmail入力欄を表示） -->
+      <div class="notify-setting-box">
+        <div class="notify-toggle-row">
+          <span><i class="bi bi-bell"></i> 通知（音・Gmail）</span>
+          <button type="button" id="notifyToggleBtn" class="btn-notify-toggle" onclick="toggleNotificationSetting()">OFF</button>
+        </div>
+        <div id="gmailInputArea" class="input-wrapper" style="display: none;">
+          <span class="input-icon"><i class="bi bi-envelope"></i></span>
+          <input type="email" id="notifyGmailInput" placeholder="通知先のGmailアドレスを入力" autocomplete="email" />
+        </div>
       </div>
 
       <!-- QRカメラ（スキャン開始／停止・トグル式） -->
