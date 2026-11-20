@@ -74,8 +74,8 @@ function playFoundSound() {
 
     const now = audioCtx.currentTime;
     const notes = [
-      { freq: 880, start: 0, duration: 0.14 },
-      { freq: 1174.66, start: 0.15, duration: 0.22 },
+      { freq: 1046.50, start: 0.0, duration: 0.09 },
+      { freq: 1046.50, start: 0.15, duration: 0.12 },
     ];
 
     notes.forEach((n) => {
@@ -85,7 +85,7 @@ function playFoundSound() {
       osc.frequency.setValueAtTime(n.freq, now + n.start);
 
       gain.gain.setValueAtTime(0.001, now + n.start);
-      gain.gain.exponentialRampToValueAtTime(0.18, now + n.start + 0.02);
+      gain.gain.linearRampToValueAtTime(0.22, now + n.start + 0.015);
       gain.gain.exponentialRampToValueAtTime(0.001, now + n.start + n.duration);
 
       osc.connect(gain);
