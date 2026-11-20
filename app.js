@@ -342,7 +342,13 @@ window.connectToPC = function () {
     setConnectionStatus("ステータス: 接続完了 ✅", "#2e7d63");
     if (startButton) {
       startButton.disabled = false;
-      startButton.innerText = "探索開始";
+      if (isSearching) {
+        startButton.innerText = "探索終了";
+        startButton.classList.add("active-stop");
+      } else {
+        startButton.innerText = "探索開始";
+        startButton.classList.remove("active-stop");
+      }
     }
   });
 
