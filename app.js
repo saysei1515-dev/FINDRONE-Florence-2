@@ -9,10 +9,8 @@ const SERVER_URL_STORAGE_KEY = "findrone_colab_server_url";
 const CAMERA_ID_STORAGE_KEY = "findrone_colab_camera_id";
 const AUTO_CONNECT_KEY = "findrone_colab_auto_connect";
 const NOTIFY_ENABLED_KEY = "findrone_notify_enabled";
-const NOTIFY_GMAIL_KEY = "findrone_notify_gmail";
 
 const NOTIFY_REPEAT_COUNT = 10; // 2回目以降は10回検出ごとに通知（約10秒前後を目安）
-const MAX_BATCH_PHOTOS_PER_OBJECT = 5; // 1通にまとめる最大枚数
 
 let isSearching = false;
 let searchTimer = null;
@@ -23,12 +21,9 @@ let lastSaveTime = 0;
 let currentFinalizedKeyword = "";
 let hasAutoConnected = false;
 
-// 通知（アプリ内トースト＆Web Audio通知音＆物体別Gmailまとめ送信）用
+// 通知（アプリ内トースト＆Web Audio通知音）用
 let isNotificationEnabled = false;
-let notifyGmailAddress = "";
 let notifyStateByObject = {}; // { [objectName]: { hasNotifiedOnce, count } }
-let pendingGmailPhotosByObject = {}; // { [objectName]: [ dataUrl, ... ] }
-let gmailSendingByObject = {}; // { [objectName]: boolean }
 let toastTimer = null;
 let audioCtx = null;
 
@@ -59,18 +54,9 @@ function clearBoundingBoxCanvas() {
 
 function updateNotificationUi() {
   const toggleBtn = document.getElementById("notifyToggleBtn");
-  const gmailArea = document.getElementById("gmailInputArea");
-  const gmailInput = document.getElementById("notifyGmailInput");
-
   if (toggleBtn) {
     toggleBtn.innerText = isNotificationEnabled ? "ON" : "OFF";
     toggleBtn.classList.toggle("is-on", isNotificationEnabled);
-  }
-  if (gmailArea) {
-    gmailArea.style.display = isNotificationEnabled ? "flex" : "none";
-  }
-  if (gmailInput && notifyGmailAddress && !gmailInput.value) {
-    gmailInput.value = notifyGmailAddress;
   }
 }
 
@@ -86,8 +72,6 @@ window.toggleNotificationSetting = function () {
 
 function resetFoundNotifyState() {
   notifyStateByObject = {};
-  pendingGmailPhotosByObject = {};
-  gmailSendingByObject = {};
 }
 
 function unlockAudioContext() {
@@ -153,85 +137,10 @@ function showFoundToast(message) {
   }, 3000);
 }
 
-function captureCropDataUrl(bbox) {
-  if (!video || !video.videoWidth || !video.videoHeight || !bbox || bbox.width <= 0 || bbox.height <= 0) {
-    return "";
-  }
-  const sx = Math.max(0, Math.min(video.videoWidth, bbox.x));
-  const sy = Math.max(0, Math.min(video.videoHeight, bbox.y));
-  const sw = Math.max(1, Math.min(video.videoWidth - sx, bbox.width));
-  const sh = Math.max(1, Math.min(video.videoHeight - sy, bbox.height));
-
-  const tempCanvas = document.createElement("canvas");
-  tempCanvas.width = sw;
-  tempCanvas.height = sh;
-  tempCanvas.getContext("2d").drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
-  return tempCanvas.toDataURL("image/jpeg", 0.75);
-}
-
-function queuePhotoForGmail(objectName, dataUrl) {
-  if (!dataUrl) return;
-  if (!pendingGmailPhotosByObject[objectName]) {
-    pendingGmailPhotosByObject[objectName] = [];
-  }
-  pendingGmailPhotosByObject[objectName].push(dataUrl);
-  if (pendingGmailPhotosByObject[objectName].length > MAX_BATCH_PHOTOS_PER_OBJECT) {
-    pendingGmailPhotosByObject[objectName] = pendingGmailPhotosByObject[objectName].slice(-MAX_BATCH_PHOTOS_PER_OBJECT);
-  }
-}
-
-async function flushObjectGmailBatch(objectName, confidence) {
-  if (!isNotificationEnabled) return;
-
-  const gmailInput = document.getElementById("notifyGmailInput");
-  const targetEmail = (gmailInput ? gmailInput.value.trim() : "") || notifyGmailAddress;
-  if (!targetEmail) return;
-
-  const serverIpInput = document.getElementById("serverIp");
-  const baseUrl = buildBaseUrl(serverIpInput ? serverIpInput.value.trim() : "");
-  if (!baseUrl) return;
-
-  const photos = pendingGmailPhotosByObject[objectName] || [];
-  if (photos.length === 0 || gmailSendingByObject[objectName]) return;
-
-  gmailSendingByObject[objectName] = true;
-  const batchPhotos = [...photos];
-  pendingGmailPhotosByObject[objectName] = [];
-
-  try {
-    await fetch(`${baseUrl}/notify-gmail`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "ngrok-skip-browser-warning": "true",
-      },
-      body: JSON.stringify({
-        to: targetEmail,
-        objectName: objectName,
-        confidence: confidence,
-        images: batchPhotos,
-      }),
-    });
-  } catch (err) {
-    console.warn("Gmail通知送信に失敗:", err);
-    // 失敗時は未送信分を戻す
-    pendingGmailPhotosByObject[objectName] = [
-      ...batchPhotos,
-      ...(pendingGmailPhotosByObject[objectName] || []),
-    ].slice(-MAX_BATCH_PHOTOS_PER_OBJECT);
-  } finally {
-    gmailSendingByObject[objectName] = false;
-  }
-}
-
-function notifyObjectFound(objectName, confidence, cropDataUrl = "") {
+function notifyObjectFound(objectName, confidence) {
   const key = (objectName || currentFinalizedKeyword || "未分類").trim();
   if (!notifyStateByObject[key]) {
     notifyStateByObject[key] = { hasNotifiedOnce: false, count: 0 };
-  }
-
-  if (cropDataUrl) {
-    queuePhotoForGmail(key, cropDataUrl);
   }
 
   const state = notifyStateByObject[key];
@@ -247,7 +156,6 @@ function notifyObjectFound(objectName, confidence, cropDataUrl = "") {
   const confText = confidence !== undefined ? ` (${confidence})` : "";
   showFoundToast(`🎉「${key}」を発見しました！${confText}`);
   playFoundSound();
-  flushObjectGmailBatch(key, confidence);
 }
 
 function beginTargetLoadingState() {
@@ -302,22 +210,16 @@ function buildBaseUrl(rawInput) {
 function initSavedSettings() {
   const serverIpInput = document.getElementById("serverIp");
   const pcIdInput = document.getElementById("pcIdInput");
-  const gmailInput = document.getElementById("notifyGmailInput");
 
   try {
     const savedUrl = localStorage.getItem(SERVER_URL_STORAGE_KEY);
     const savedId = localStorage.getItem(CAMERA_ID_STORAGE_KEY);
     const savedNotifyEnabled = localStorage.getItem(NOTIFY_ENABLED_KEY);
-    const savedGmail = localStorage.getItem(NOTIFY_GMAIL_KEY);
 
     if (savedUrl && serverIpInput) serverIpInput.value = savedUrl;
     if (savedId && pcIdInput) pcIdInput.value = savedId;
     if (savedNotifyEnabled === "true") {
       isNotificationEnabled = true;
-    }
-    if (savedGmail) {
-      notifyGmailAddress = savedGmail;
-      if (gmailInput) gmailInput.value = savedGmail;
     }
   } catch (err) {
     console.warn("設定の初期化に失敗:", err);
@@ -348,19 +250,15 @@ function tryAutoConnectIfNeeded() {
 window.saveAllSettings = function () {
   const serverIpInput = document.getElementById("serverIp");
   const pcIdInput = document.getElementById("pcIdInput");
-  const gmailInput = document.getElementById("notifyGmailInput");
 
   const rawUrl = serverIpInput ? serverIpInput.value.trim() : "";
   const rawId = pcIdInput ? pcIdInput.value.trim() : "";
-  const rawGmail = gmailInput ? gmailInput.value.trim() : "";
 
   try {
     localStorage.setItem(SERVER_URL_STORAGE_KEY, rawUrl);
     localStorage.setItem(CAMERA_ID_STORAGE_KEY, rawId);
     localStorage.setItem(AUTO_CONNECT_KEY, "true");
     localStorage.setItem(NOTIFY_ENABLED_KEY, String(isNotificationEnabled));
-    localStorage.setItem(NOTIFY_GMAIL_KEY, rawGmail);
-    notifyGmailAddress = rawGmail;
 
     setConnectionStatus("設定を保存しました。接続処理を実行中...", "#2e7d63");
     if (rawId) {
@@ -788,23 +686,19 @@ function drawDetections(detections) {
     ctx.fillText(labelText, x + 6, badgeY + 15);
 
     const objectName = (det.label || currentFinalizedKeyword || "未分類").trim();
-    const bboxPx = {
-      x: (xmin / 1000) * video.videoWidth,
-      y: (ymin / 1000) * video.videoHeight,
-      width: ((xmax - xmin) / 1000) * video.videoWidth,
-      height: ((ymax - ymin) / 1000) * video.videoHeight,
-    };
-    const cropDataUrl = captureCropDataUrl(bboxPx);
-
-    notifyObjectFound(objectName, det.confidence, cropDataUrl);
+    notifyObjectFound(objectName, det.confidence);
 
     const now = Date.now();
     if (now - lastSaveTime > 3000) {
-      if (cropDataUrl) {
-        addGalleryThumbnail(cropDataUrl, objectName);
-      } else {
-        saveFoundImage(bboxPx, objectName);
-      }
+      saveFoundImage(
+        {
+          x: (xmin / 1000) * video.videoWidth,
+          y: (ymin / 1000) * video.videoHeight,
+          width: ((xmax - xmin) / 1000) * video.videoWidth,
+          height: ((ymax - ymin) / 1000) * video.videoHeight,
+        },
+        objectName
+      );
       lastSaveTime = now;
     }
   });
@@ -989,10 +883,18 @@ window.closePreview = function () {
 };
 
 function saveFoundImage(bbox, objectName = "未分類") {
-  const dataUrl = captureCropDataUrl(bbox);
-  if (dataUrl) {
-    addGalleryThumbnail(dataUrl, objectName);
-  }
+  if (!video || !video.videoWidth || !video.videoHeight || bbox.width <= 0 || bbox.height <= 0) return;
+
+  const sx = Math.max(0, Math.min(video.videoWidth, bbox.x));
+  const sy = Math.max(0, Math.min(video.videoHeight, bbox.y));
+  const sw = Math.max(1, Math.min(video.videoWidth - sx, bbox.width));
+  const sh = Math.max(1, Math.min(video.videoHeight - sy, bbox.height));
+
+  const tempCanvas = document.createElement("canvas");
+  tempCanvas.width = sw;
+  tempCanvas.height = sh;
+  tempCanvas.getContext("2d").drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
+  addGalleryThumbnail(tempCanvas.toDataURL("image/jpeg"), objectName);
 }
 
 // 保存データ読み込み
