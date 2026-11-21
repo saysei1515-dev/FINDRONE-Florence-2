@@ -336,7 +336,32 @@
       font-size: 13px;
       font-weight: 700;
       box-shadow: 0 8px 20px rgba(114, 211, 189, 0.24);
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .toast-message-text {
+      flex: 1;
       text-align: center;
+    }
+
+    /* 通知バナー右端に表示する検出個数バッジ */
+    .toast-count-badge {
+      display: none;
+      flex-shrink: 0;
+      min-width: 26px;
+      height: 22px;
+      padding: 0 7px;
+      border-radius: 9999px;
+      background: #ff7b93;
+      color: #ffffff;
+      border: 1.5px solid #ffffff;
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 19px;
+      text-align: center;
+      box-shadow: 0 2px 6px rgba(180, 60, 85, 0.28);
     }
 
     /* Android等に被らないフッター固定ナビゲーション */
@@ -378,26 +403,6 @@
 
     .nav-item.active {
       color: #72d3bd;
-    }
-
-    /* タブ右端に表示する検出個数バッジ */
-    .nav-count-badge {
-      display: none;
-      position: absolute;
-      top: 0;
-      right: -2px;
-      min-width: 22px;
-      height: 18px;
-      padding: 0 5px;
-      border-radius: 9999px;
-      background: #ff7b93;
-      color: #ffffff;
-      border: 1.5px solid #ffffff;
-      font-size: 10px;
-      font-weight: 800;
-      line-height: 15px;
-      text-align: center;
-      box-shadow: 0 2px 6px rgba(180, 60, 85, 0.28);
     }
 
     /* 履歴モーダル */
@@ -655,8 +660,11 @@
         <span id="unreadPhotosBadge" class="folder-unread-badge">0</span>
       </button>
 
-      <!-- 発見通知バナー（発見した物体一覧の下に表示） -->
-      <div id="foundToast"></div>
+      <!-- 発見通知バナー（発見した物体一覧の下に表示・右端に検出個数バッジ） -->
+      <div id="foundToast">
+        <span id="foundToastText" class="toast-message-text"></span>
+        <span id="detectedCountBadge" class="toast-count-badge">×0</span>
+      </div>
     </div>
   </div>
 
@@ -711,7 +719,6 @@
     <button id="nav-setting" class="nav-item" onclick="goToTab('setting')">
       <i class="bi bi-gear"></i>
       <span>setting</span>
-      <span id="detectedCountBadge" class="nav-count-badge">×0</span>
     </button>
   </div>
 
