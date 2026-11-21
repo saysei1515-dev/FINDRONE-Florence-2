@@ -30,6 +30,7 @@ let audioCtx = null;
 // 物体名ごとの履歴データ: { [labelName]: [ { id, dataUrl }, ... ] }
 let historyByObject = {};
 let selectedObjectFolder = null;
+let unreadPhotosCount = 0;
 
 function setStatus(text, color = "#a2759e") {
   if (statusEl) {
@@ -46,10 +47,38 @@ function setConnectionStatus(text, color = "#8c7388") {
   }
 }
 
+function updateUnreadPhotosBadge() {
+  const badge = document.getElementById("unreadPhotosBadge");
+  if (!badge) return;
+
+  if (unreadPhotosCount > 0) {
+    badge.innerText = unreadPhotosCount > 99 ? "99+" : String(unreadPhotosCount);
+    badge.style.display = "inline-block";
+  } else {
+    badge.innerText = "0";
+    badge.style.display = "none";
+  }
+}
+
+function updateDetectedCountBadge(count) {
+  const badge = document.getElementById("detectedCountBadge");
+  if (!badge) return;
+
+  const num = Number(count) || 0;
+  if (num > 0) {
+    badge.innerText = `×${num}`;
+    badge.style.display = "inline-block";
+  } else {
+    badge.innerText = "×0";
+    badge.style.display = "none";
+  }
+}
+
 function clearBoundingBoxCanvas() {
   if (ctx && canvas) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   }
+  updateDetectedCountBadge(0);
 }
 
 function updateNotificationUi() {
@@ -226,6 +255,8 @@ function initSavedSettings() {
   }
 
   updateNotificationUi();
+  updateDetectedCountBadge(0);
+  updateUnreadPhotosBadge();
 }
 
 // PeerJS 準備完了後に自動接続を実行する
@@ -646,9 +677,23 @@ function drawDetections(detections) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   // 新しい物体名のサーバー反映中は枠を描画しない
-  if (isUpdatingTarget) return;
+  if (isUpdatingTarget) {
+    updateDetectedCountBadge(0);
+    return;
+  }
 
-  if (!detections || detections.length === 0) return;
+  if (!detections || detections.length === 0) {
+    updateDetectedCountBadge(0);
+    return;
+  }
+
+  const targetKey = (currentFinalizedKeyword || "").trim().toLowerCase();
+  const matchedCount = detections.filter((det) => {
+    if (!targetKey) return true;
+    const label = String(det.label || "").trim().toLowerCase();
+    return label === targetKey || label.includes(targetKey);
+  }).length;
+  updateDetectedCountBadge(matchedCount > 0 ? matchedCount : detections.length);
 
   const videoRatio = video.videoWidth / video.videoHeight;
   const viewRatio = viewWidth / viewHeight;
@@ -849,6 +894,8 @@ window.backToFolderList = function () {
 };
 
 window.openHistoryFolder = function () {
+  unreadPhotosCount = 0;
+  updateUnreadPhotosBadge();
   selectedObjectFolder = null;
   renderHistoryModal();
   const modal = document.getElementById("historyFolderModal");
@@ -864,6 +911,8 @@ window.closeHistoryFolder = function () {
 window.clearGallery = function () {
   historyByObject = {};
   selectedObjectFolder = null;
+  unreadPhotosCount = 0;
+  updateUnreadPhotosBadge();
   renderHistoryModal();
 };
 
@@ -878,8 +927,14 @@ function addGalleryThumbnail(dataUrl, objectName = "未分類") {
   });
 
   const modal = document.getElementById("historyFolderModal");
-  if (modal && modal.style.display === "flex") {
+  const isModalOpen = modal && modal.style.display === "flex";
+  if (isModalOpen) {
+    unreadPhotosCount = 0;
+    updateUnreadPhotosBadge();
     renderHistoryModal();
+  } else {
+    unreadPhotosCount += 1;
+    updateUnreadPhotosBadge();
   }
 }
 
