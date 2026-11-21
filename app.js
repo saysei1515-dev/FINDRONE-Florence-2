@@ -153,10 +153,11 @@ function playFoundSound() {
 
 function showFoundToast(message) {
   const toastEl = document.getElementById("foundToast");
-  if (!toastEl) return;
+  const toastTextEl = document.getElementById("foundToastText");
+  if (!toastEl || !toastTextEl) return;
 
-  toastEl.innerText = message;
-  toastEl.style.display = "block";
+  toastTextEl.innerText = message;
+  toastEl.style.display = "flex";
 
   if (toastTimer) {
     clearTimeout(toastTimer);
