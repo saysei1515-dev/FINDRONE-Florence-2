@@ -10,7 +10,7 @@ const CAMERA_ID_STORAGE_KEY = "findrone_colab_camera_id";
 const AUTO_CONNECT_KEY = "findrone_colab_auto_connect";
 const NOTIFY_ENABLED_KEY = "findrone_notify_enabled";
 
-const NOTIFY_REPEAT_COUNT = 10; // 2回目以降は10回検出ごとに通知（約10秒前後を目安）
+const NOTIFY_REPEAT_COUNT = 10; // 通知音は2回目以降は10回検出ごと
 
 let isSearching = false;
 let searchTimer = null;
@@ -23,8 +23,7 @@ let hasAutoConnected = false;
 
 // 通知（アプリ内トースト＆Web Audio通知音）用
 let isNotificationEnabled = false;
-let notifyStateByObject = {}; // { [objectName]: { hasNotifiedOnce, count } }
-let toastTimer = null;
+let notifySoundStateByObject = {}; // { [objectName]: { hasPlayedOnce, count } }
 let audioCtx = null;
 
 // 物体名ごとの履歴データ: { [labelName]: [ { id, dataUrl }, ... ] }
@@ -60,13 +59,47 @@ function updateUnreadPhotosBadge() {
   }
 }
 
-function updateDetectedCountBadge(count) {
+function hideFoundBannerAndBadge() {
+  const toastEl = document.getElementById("foundToast");
+  const toastTextEl = document.getElementById("foundToastText");
   const badge = document.getElementById("detectedCountBadge");
-  if (!badge) return;
 
-  const num = Number(count) || 0;
-  if (num > 0) {
-    badge.innerText = `×${num}`;
+  if (toastTextEl) toastTextEl.innerText = "";
+  if (toastEl) toastEl.style.display = "none";
+  if (badge) {
+    badge.innerText = "×0";
+    badge.style.display = "none";
+  }
+}
+
+function updateBannerAndCount(detections) {
+  const toastEl = document.getElementById("foundToast");
+  const toastTextEl = document.getElementById("foundToastText");
+  const badge = document.getElementById("detectedCountBadge");
+  if (!toastEl || !toastTextEl || !badge) return;
+
+  if (isUpdatingTarget || !Array.isArray(detections) || detections.length === 0) {
+    hideFoundBannerAndBadge();
+    return;
+  }
+
+  const targetKey = (currentFinalizedKeyword || "").trim().toLowerCase();
+  const matched = detections.filter((det) => {
+    if (!targetKey) return true;
+    const label = String(det.label || "").trim().toLowerCase();
+    return label === targetKey || label.includes(targetKey);
+  });
+  const targetDetections = matched.length > 0 ? matched : detections;
+  const count = targetDetections.length;
+  const primary = targetDetections[0];
+  const objectName = (primary.label || currentFinalizedKeyword || "未分類").trim();
+  const confText = primary.confidence !== undefined ? ` (${primary.confidence})` : "";
+
+  toastTextEl.innerText = `🎉「${objectName}」を発見しました！${confText}`;
+  toastEl.style.display = "flex";
+
+  if (count > 0) {
+    badge.innerText = `×${count}`;
     badge.style.display = "inline-block";
   } else {
     badge.innerText = "×0";
@@ -78,7 +111,7 @@ function clearBoundingBoxCanvas() {
   if (ctx && canvas) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   }
-  updateDetectedCountBadge(0);
+  hideFoundBannerAndBadge();
 }
 
 function updateNotificationUi() {
@@ -100,7 +133,7 @@ window.toggleNotificationSetting = function () {
 };
 
 function resetFoundNotifyState() {
-  notifyStateByObject = {};
+  notifySoundStateByObject = {};
 }
 
 function unlockAudioContext() {
@@ -151,40 +184,25 @@ function playFoundSound() {
   }
 }
 
-function showFoundToast(message) {
-  const toastEl = document.getElementById("foundToast");
-  const toastTextEl = document.getElementById("foundToastText");
-  if (!toastEl || !toastTextEl) return;
+function tryPlaySoundForObject(objectName) {
+  if (!isNotificationEnabled) return;
 
-  toastTextEl.innerText = message;
-  toastEl.style.display = "flex";
-
-  if (toastTimer) {
-    clearTimeout(toastTimer);
-  }
-  toastTimer = setTimeout(() => {
-    toastEl.style.display = "none";
-  }, 3000);
-}
-
-function notifyObjectFound(objectName, confidence) {
   const key = (objectName || currentFinalizedKeyword || "未分類").trim();
-  if (!notifyStateByObject[key]) {
-    notifyStateByObject[key] = { hasNotifiedOnce: false, count: 0 };
+  if (!notifySoundStateByObject[key]) {
+    notifySoundStateByObject[key] = { hasPlayedOnce: false, count: 0 };
   }
 
-  const state = notifyStateByObject[key];
-  if (!state.hasNotifiedOnce) {
-    state.hasNotifiedOnce = true;
+  const state = notifySoundStateByObject[key];
+  if (!state.hasPlayedOnce) {
+    state.hasPlayedOnce = true;
     state.count = 0;
-  } else {
-    state.count += 1;
-    if (state.count < NOTIFY_REPEAT_COUNT) return;
-    state.count = 0;
+    playFoundSound();
+    return;
   }
 
-  const confText = confidence !== undefined ? ` (${confidence})` : "";
-  showFoundToast(`🎉「${key}」を発見しました！${confText}`);
+  state.count += 1;
+  if (state.count < NOTIFY_REPEAT_COUNT) return;
+  state.count = 0;
   playFoundSound();
 }
 
@@ -256,7 +274,7 @@ function initSavedSettings() {
   }
 
   updateNotificationUi();
-  updateDetectedCountBadge(0);
+  hideFoundBannerAndBadge();
   updateUnreadPhotosBadge();
 }
 
@@ -679,22 +697,17 @@ function drawDetections(detections) {
 
   // 新しい物体名のサーバー反映中は枠を描画しない
   if (isUpdatingTarget) {
-    updateDetectedCountBadge(0);
+    hideFoundBannerAndBadge();
     return;
   }
 
   if (!detections || detections.length === 0) {
-    updateDetectedCountBadge(0);
+    hideFoundBannerAndBadge();
     return;
   }
 
-  const targetKey = (currentFinalizedKeyword || "").trim().toLowerCase();
-  const matchedCount = detections.filter((det) => {
-    if (!targetKey) return true;
-    const label = String(det.label || "").trim().toLowerCase();
-    return label === targetKey || label.includes(targetKey);
-  }).length;
-  updateDetectedCountBadge(matchedCount > 0 ? matchedCount : detections.length);
+  // 0.5秒ごとの検出結果に合わせてバナーと個数バッジを更新
+  updateBannerAndCount(detections);
 
   const videoRatio = video.videoWidth / video.videoHeight;
   const viewRatio = viewWidth / viewHeight;
@@ -738,7 +751,7 @@ function drawDetections(detections) {
     ctx.fillText(labelText, x + 6, badgeY + 15);
 
     const objectName = (det.label || currentFinalizedKeyword || "未分類").trim();
-    notifyObjectFound(objectName, det.confidence);
+    tryPlaySoundForObject(objectName);
 
     const now = Date.now();
     if (now - lastSaveTime > 3000) {
